@@ -9,4 +9,28 @@
 //
 // RDF-star is represented via TripleTerm, allowing quoted triples to appear
 // as subjects or objects.
+//
+// Example:
+//
+//	dec, err := rdf.NewDecoder(strings.NewReader(input), rdf.FormatNTriples)
+//	if err != nil {
+//	    // handle error
+//	}
+//	defer dec.Close()
+//
+//	for {
+//	    quad, err := dec.Next()
+//	    if err == io.EOF {
+//	        break
+//	    }
+//	    if err != nil {
+//	        // handle error
+//	    }
+//	    // process quad.S, quad.P, quad.O, quad.G
+//	}
+//
+// For unsupported formats, NewDecoder and NewEncoder return ErrUnsupportedFormat.
+//
+// The API is intentionally small and favors streaming. For large inputs,
+// prefer NewDecoder or Parse instead of buffering all results.
 package rdf
