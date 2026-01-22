@@ -1,6 +1,6 @@
-# grit/rdf-go
+# rdf-go
 
-`grit/rdf-go` is a small, fast RDF parsing/encoding library with streaming
+`rdf-go` is a small, fast RDF parsing/encoding library with streaming
 APIs and RDF-star support. It is designed for low allocations and for use
 in pipelines where RDF data should be processed incrementally.
 
