@@ -1,4 +1,4 @@
-module github.com/yourorg/rdf-go
+module github.com/geoknoesis/rdf-go
 
 go 1.24.0
 
