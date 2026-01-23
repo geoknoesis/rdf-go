@@ -94,7 +94,7 @@ func parseTurtleTripleLineWithOptions(opts TurtleParseOptions, line string) ([]T
 		prefixes:                   opts.Prefixes,
 		base:                       opts.BaseIRI,
 		expansionTriples:           []Triple{},
-		blankNodeCounter:           0,
+		// blankNodeCounter uses zero value (0)
 		allowQuotedTripleStatement: opts.AllowQuoted,
 		debugStatements:            opts.DebugStatements,
 		maxDepth:                   maxDepth,

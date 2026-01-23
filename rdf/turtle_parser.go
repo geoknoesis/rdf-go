@@ -29,7 +29,7 @@ func newTurtleParser(r io.Reader, opts DecodeOptions) *turtleParser {
 		opts:                       normalizeDecodeOptions(opts),
 		prefixes:                   map[string]string{},
 		allowQuotedTripleStatement: opts.AllowQuotedTripleStatement,
-		blankNodeCounter:           0,
+		// blankNodeCounter uses zero value (0)
 	}
 }
 
