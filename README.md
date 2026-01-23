@@ -271,5 +271,6 @@ dec := rdf.NewJSONLDTripleDecoder(r, opts)
 **Note**: JSON-LD supports streaming parsing using `json.Decoder` token-by-token processing. The decoder processes nodes incrementally and emits triples/quads as they are parsed. However, there are some limitations:
 - When `@graph` appears before `@context` in the JSON structure, the graph items must be buffered until the context is available (this is necessary for correct term expansion)
 - Nested objects and arrays are fully decoded into memory (this is required for JSON-LD context processing and term expansion)
+- **Remote context resolution**: The streaming decoder supports remote context URLs when a `DocumentLoader` is provided in `JSONLDOptions`. If `@context` is a string URL, it will be loaded via the `DocumentLoader` before processing.
 - For very large documents with `@graph` before `@context`, consider reordering the JSON structure to place `@context` first, or use other RDF formats (Turtle, N-Triples, TriG, N-Quads) which have more efficient streaming characteristics
 

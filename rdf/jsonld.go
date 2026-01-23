@@ -161,6 +161,41 @@ func newJSONLDContext() jsonldContext {
 
 type jsonldQuadSink func(Quad) error
 
+// resolveContextValue resolves a context value, handling string URLs and arrays.
+// If the context is a string URL and DocumentLoader is provided, it loads the remote context.
+func resolveContextValue(contextVal interface{}, opts JSONLDOptions) (interface{}, error) {
+	// If it's a string URL, load it via DocumentLoader
+	if urlStr, ok := contextVal.(string); ok {
+		if opts.DocumentLoader != nil {
+			remote, err := opts.DocumentLoader.LoadDocument(opts.Context, urlStr)
+			if err != nil {
+				return nil, fmt.Errorf("jsonld: failed to load remote context %q: %w", urlStr, err)
+			}
+			return remote.Document, nil
+		}
+		// No DocumentLoader - return as-is (will be ignored by withContext)
+		return nil, nil
+	}
+	// If it's an array, resolve each element
+	if ctxArray, ok := contextVal.([]interface{}); ok {
+		resolved := make([]interface{}, 0, len(ctxArray))
+		for _, item := range ctxArray {
+			res, err := resolveContextValue(item, opts)
+			if err != nil {
+				return nil, err
+			}
+			if res != nil {
+				resolved = append(resolved, res)
+			} else if item != nil {
+				resolved = append(resolved, item)
+			}
+		}
+		return resolved, nil
+	}
+	// Already an object or other type - return as-is
+	return contextVal, nil
+}
+
 func parseJSONLDToQuads(data interface{}, opts JSONLDOptions) ([]Quad, error) {
 	var quads []Quad
 	if err := parseJSONLDToSink(data, opts, func(q Quad) error {
@@ -264,6 +299,16 @@ func parseJSONLDTopArrayStream(dec *json.Decoder, opts JSONLDOptions, sink jsonl
 		node, ok := value.(map[string]interface{})
 		if !ok {
 			continue
+		}
+		// Resolve remote context URLs if DocumentLoader is provided
+		if opts.DocumentLoader != nil && node["@context"] != nil {
+			resolved, err := resolveContextValue(node["@context"], opts)
+			if err != nil {
+				return err
+			}
+			if resolved != nil {
+				node["@context"] = resolved
+			}
 		}
 		ctx = ctx.withContext(node["@context"])
 		if err := parseJSONLDNode(node, ctx, nil, state, sink); err != nil {
@@ -526,6 +571,7 @@ func (c jsonldContext) withContext(raw interface{}) jsonldContext {
 	if raw == nil {
 		return c
 	}
+	// Handle inline context object
 	if ctxMap, ok := raw.(map[string]interface{}); ok {
 		for key, value := range ctxMap {
 			if key == "@vocab" {
@@ -538,7 +584,17 @@ func (c jsonldContext) withContext(raw interface{}) jsonldContext {
 				c.prefixes[key] = str
 			}
 		}
+		return c
 	}
+	// Handle context array (merge multiple contexts)
+	if ctxArray, ok := raw.([]interface{}); ok {
+		for _, item := range ctxArray {
+			c = c.withContext(item)
+		}
+		return c
+	}
+	// Note: Remote context URLs (string) are not supported in streaming decoder
+	// Use JSONLDProcessor API with DocumentLoader for remote context resolution
 	return c
 }
 
