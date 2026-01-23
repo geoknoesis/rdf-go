@@ -32,6 +32,7 @@ func TestJSONLDRemoteContextSchemaOrg(t *testing.T) {
 	// Test JSON-LD with schema.org remote context reference
 	input := `{
 		"@context": "https://schema.org/docs/jsonldcontext.jsonld",
+		"@id": "https://example.org/john",
 		"@type": "Person",
 		"name": "John Doe",
 		"url": "https://example.org/john"
@@ -122,6 +123,7 @@ func TestJSONLDRemoteContextArray(t *testing.T) {
 			"https://schema.org/docs/jsonldcontext.jsonld",
 			{"ex": "http://example.org/"}
 		],
+		"@id": "https://example.org/jane",
 		"@type": "Person",
 		"name": "Jane Doe",
 		"ex:custom": "value"
@@ -184,6 +186,7 @@ func TestJSONLDRemoteContextWithoutLoader(t *testing.T) {
 	// Test that remote context URLs are ignored when no DocumentLoader is provided
 	input := `{
 		"@context": "https://schema.org/docs/jsonldcontext.jsonld",
+		"@id": "https://example.org/person",
 		"@type": "Person",
 		"name": "John Doe"
 	}`
@@ -210,6 +213,7 @@ func TestJSONLDRemoteContextInNode(t *testing.T) {
 		"@context": {"ex": "http://example.org/"},
 		"@id": "ex:parent",
 		"ex:child": {
+			"@id": "ex:child",
 			"@context": "https://schema.org/docs/jsonldcontext.jsonld",
 			"@type": "Person",
 			"name": "Child Name"
