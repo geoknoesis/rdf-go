@@ -11,13 +11,55 @@ const (
 )
 
 func parseTurtleStatement(prefixes map[string]string, baseIRI string, allowQuoted bool, debugStatements bool, line string) ([]Triple, error) {
-	decoder := &turtleTripleDecoder{
+	return parseTurtleTripleLine(prefixes, baseIRI, allowQuoted, debugStatements, line)
+}
+
+func parseTurtleTripleLine(prefixes map[string]string, baseIRI string, allowQuoted bool, debugStatements bool, line string) ([]Triple, error) {
+	cursor := &turtleCursor{
+		input:                      line,
 		prefixes:                   prefixes,
-		baseIRI:                    baseIRI,
+		base:                       baseIRI,
+		expansionTriples:           []Triple{},
+		blankNodeCounter:           0,
 		allowQuotedTripleStatement: allowQuoted,
+		debugStatements:            debugStatements,
 	}
-	decoder.opts.DebugStatements = debugStatements
-	return decoder.parseTripleLine(line)
+	subject, err := cursor.parseSubject()
+	if err != nil {
+		return nil, err
+	}
+	if _, ok := subject.(TripleTerm); ok && cursor.lastTermReified {
+		return nil, cursor.errorf("reified triple term cannot be used as subject")
+	}
+	cursor.skipWS()
+	// Allow blank node property list as a standalone triple (no predicateObjectList)
+	if cursor.lastTermBlankNodeList && cursor.pos < len(cursor.input) && cursor.input[cursor.pos] == '.' {
+		cursor.pos++
+		if err := cursor.ensureLineEnd(); err != nil {
+			return nil, err
+		}
+		return cursor.expansionTriples, nil
+	}
+	// Allow standalone quoted triple statements when enabled
+	if cursor.allowQuotedTripleStatement {
+		if _, ok := subject.(TripleTerm); ok && cursor.pos < len(cursor.input) && cursor.input[cursor.pos] == '.' {
+			cursor.pos++
+			if err := cursor.ensureLineEnd(); err != nil {
+				return nil, err
+			}
+			return cursor.expansionTriples, nil
+		}
+	}
+
+	triples, err := cursor.parsePredicateObjectList(subject)
+	if err != nil {
+		return nil, err
+	}
+
+	// Append expansion triples (from collections and blank node property lists)
+	triples = append(triples, cursor.expansionTriples...)
+
+	return triples, nil
 }
 
 func normalizeTriGStatement(stmt string) string {
