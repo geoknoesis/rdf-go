@@ -237,7 +237,8 @@ func (p *turtleParser) parseTriplesTokens(tokens []turtleToken, line string) ([]
 	// Add expansion triples (from collections and blank node lists)
 	triples = append(triples, p.expansionTriples...)
 	// Reset for next statement - if capacity is large, release it to prevent memory bloat
-	if cap(p.expansionTriples) > 1024 {
+	const maxExpansionTriplesCapacity = 1024
+	if cap(p.expansionTriples) > maxExpansionTriplesCapacity {
 		p.expansionTriples = nil
 	} else {
 		p.expansionTriples = p.expansionTriples[:0]
