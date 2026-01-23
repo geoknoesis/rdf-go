@@ -3,6 +3,7 @@ package rdf
 import (
 	"errors"
 	"fmt"
+	"strings"
 )
 
 var (
@@ -29,24 +30,99 @@ type ParseError struct {
 }
 
 func (e *ParseError) Error() string {
-	// Prefer line/column information when available
+	// Build error message with position information
+	var msg strings.Builder
+	msg.WriteString(e.Format)
+	
+	// Add position information
 	if e.Line > 0 {
 		if e.Column > 0 {
-			return fmt.Sprintf("%s:%d:%d: %v", e.Format, e.Line, e.Column, e.Err)
+			fmt.Fprintf(&msg, ":%d:%d", e.Line, e.Column)
+		} else {
+			fmt.Fprintf(&msg, ":%d", e.Line)
 		}
-		return fmt.Sprintf("%s:%d: %v", e.Format, e.Line, e.Err)
+	} else if e.Offset >= 0 {
+		fmt.Fprintf(&msg, " (offset %d)", e.Offset)
 	}
-	// Fall back to offset or statement context
-	switch {
-	case e.Statement != "" && e.Offset >= 0:
-		return fmt.Sprintf("%s: parse error at offset %d in %q: %v", e.Format, e.Offset, e.Statement, e.Err)
-	case e.Statement != "":
-		return fmt.Sprintf("%s: parse error in %q: %v", e.Format, e.Statement, e.Err)
-	case e.Offset >= 0:
-		return fmt.Sprintf("%s: parse error at offset %d: %v", e.Format, e.Offset, e.Err)
-	default:
-		return fmt.Sprintf("%s: parse error: %v", e.Format, e.Err)
+	
+	msg.WriteString(": ")
+	msg.WriteString(e.Err.Error())
+	
+	// Add input excerpt if available
+	if e.Statement != "" {
+		excerpt := e.formatExcerpt()
+		if excerpt != "" {
+			msg.WriteString("\n  ")
+			msg.WriteString(excerpt)
+		}
 	}
+	
+	return msg.String()
+}
+
+// formatExcerpt formats a readable excerpt of the statement around the error position.
+func (e *ParseError) formatExcerpt() string {
+	if e.Statement == "" {
+		return ""
+	}
+	
+	const maxExcerptLen = 80
+	const contextLen = 40
+	
+	// If we have column information, show context around the error
+	if e.Column > 0 && len(e.Statement) > 0 {
+		start := e.Column - 1
+		if start < 0 {
+			start = 0
+		}
+		
+		// Show context before and after
+		excerptStart := start - contextLen
+		if excerptStart < 0 {
+			excerptStart = 0
+		}
+		excerptEnd := start + contextLen
+		if excerptEnd > len(e.Statement) {
+			excerptEnd = len(e.Statement)
+		}
+		
+		excerpt := e.Statement[excerptStart:excerptEnd]
+		if excerptStart > 0 {
+			excerpt = "..." + excerpt
+		}
+		if excerptEnd < len(e.Statement) {
+			excerpt = excerpt + "..."
+		}
+		
+		// Add caret pointing to error position
+		caretPos := start - excerptStart
+		if excerptStart > 0 {
+			caretPos += 3 // Account for "..."
+		}
+		if caretPos < 0 {
+			caretPos = 0
+		}
+		if caretPos >= len(excerpt) {
+			caretPos = len(excerpt) - 1
+		}
+		
+		// Build excerpt with caret
+		var result strings.Builder
+		result.WriteString(excerpt)
+		result.WriteString("\n  ")
+		for i := 0; i < caretPos; i++ {
+			result.WriteByte(' ')
+		}
+		result.WriteByte('^')
+		
+		return result.String()
+	}
+	
+	// Fall back to truncated statement
+	if len(e.Statement) > maxExcerptLen {
+		return e.Statement[:maxExcerptLen] + "..."
+	}
+	return e.Statement
 }
 
 func (e *ParseError) Unwrap() error { return e.Err }
