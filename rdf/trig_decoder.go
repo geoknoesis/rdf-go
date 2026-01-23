@@ -98,7 +98,7 @@ func (d *trigQuadDecoder) Next() (Quad, error) {
 			}
 
 			if d.inGraphBlock && isTrigDirectiveLine(trimmed) {
-				d.err = fmt.Errorf("trig: directives not allowed inside graph")
+				d.err = d.wrapParseError("", fmt.Errorf("directives not allowed inside graph"))
 				return Quad{}, d.err
 			}
 
@@ -119,7 +119,7 @@ func (d *trigQuadDecoder) Next() (Quad, error) {
 
 			openIdx, closeIdx := findGraphBlockBounds(trimmed)
 			if d.inGraphBlock && openIdx >= 0 && !isAnnotationBlock(trimmed, openIdx) {
-				d.err = fmt.Errorf("trig: nested graph blocks are not allowed")
+				d.err = d.wrapParseError("", fmt.Errorf("nested graph blocks are not allowed"))
 				return Quad{}, d.err
 			}
 			if openIdx >= 0 && closeIdx > openIdx && !isAnnotationBlock(trimmed, openIdx) {
@@ -130,7 +130,7 @@ func (d *trigQuadDecoder) Next() (Quad, error) {
 				}
 				if after != "" {
 					if !strings.Contains(after, "{") {
-						d.err = fmt.Errorf("trig: unexpected content after graph block")
+						d.err = d.wrapParseError("", fmt.Errorf("unexpected content after graph block"))
 						return Quad{}, d.err
 					}
 					d.remainder = after
@@ -148,8 +148,8 @@ func (d *trigQuadDecoder) Next() (Quad, error) {
 				graphToken := strings.TrimSpace(trimmed[:openIdx])
 				graphTerm, err := d.parseGraphToken(graphToken)
 				if err != nil {
-					d.err = err
-					return Quad{}, err
+					d.err = d.wrapParseError("", err)
+					return Quad{}, d.err
 				}
 				d.graph = graphTerm
 				d.inGraphBlock = true
@@ -201,7 +201,7 @@ func (d *trigQuadDecoder) Next() (Quad, error) {
 		}
 
 		if hitEOF && d.inGraphBlock {
-			d.err = fmt.Errorf("trig: expected '}'")
+			d.err = d.wrapParseError("", fmt.Errorf("expected '}'"))
 			return Quad{}, d.err
 		}
 
@@ -275,14 +275,14 @@ func (d *trigQuadDecoder) parseGraphToken(token string) (Term, error) {
 	if strings.HasPrefix(upper, "GRAPH ") {
 		token = strings.TrimSpace(token[len("GRAPH "):])
 		if token == "" {
-			return nil, fmt.Errorf("trig: expected graph name")
+			return nil, fmt.Errorf("expected graph name")
 		}
 	}
 	if strings.HasPrefix(token, "[") && token != "[]" {
-		return nil, fmt.Errorf("trig: invalid graph name")
+		return nil, fmt.Errorf("invalid graph name")
 	}
 	if strings.HasPrefix(token, "(") {
-		return nil, fmt.Errorf("trig: invalid graph name")
+		return nil, fmt.Errorf("invalid graph name")
 	}
 	cursor := &turtleCursor{input: token, prefixes: d.prefixes, base: d.baseIRI}
 	term, err := cursor.parseTerm(false)
@@ -291,7 +291,7 @@ func (d *trigQuadDecoder) parseGraphToken(token string) (Term, error) {
 	}
 	cursor.skipWS()
 	if cursor.pos != len(cursor.input) {
-		return nil, fmt.Errorf("trig: invalid graph name")
+		return nil, fmt.Errorf("invalid graph name")
 	}
 	return term, nil
 }
@@ -350,7 +350,7 @@ func (d *trigQuadDecoder) parseInlineGraphBlock(trimmed string, openIdx, closeId
 	after := strings.TrimSpace(trimmed[closeIdx+1:])
 	graphTerm, err := d.parseGraphToken(graphToken)
 	if err != nil {
-		return nil, "", err
+		return nil, "", d.wrapParseError("", err)
 	}
 	if inner == "" {
 		return nil, after, nil
@@ -392,7 +392,7 @@ func (d *trigQuadDecoder) handleStartGraphBlock(trimmed string, graphForStatemen
 	graphToken := strings.TrimSpace(strings.TrimSuffix(trimmed, "{"))
 	graphTerm, err := d.parseGraphToken(graphToken)
 	if err != nil {
-		return false, err
+		return false, d.wrapParseError("", err)
 	}
 	d.graph = graphTerm
 	d.inGraphBlock = true
@@ -460,7 +460,7 @@ func (d *trigQuadDecoder) maybeReadDirectiveContinuation(trimmed string) (string
 	nextLine, err := d.nextLineOrRemainder()
 	if err != nil {
 		if err == io.EOF {
-			return "", false, fmt.Errorf("trig: incomplete directive")
+			return "", false, fmt.Errorf("incomplete directive")
 		}
 		return "", false, err
 	}

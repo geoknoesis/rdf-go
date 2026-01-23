@@ -6,8 +6,11 @@ import (
 )
 
 const (
-	rdfTypeIRI    = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
-	rdfReifiesIRI = "http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies"
+	rdfTypeIRI          = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+	rdfReifiesIRI       = "http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies"
+	rdfLangStringIRI    = "http://www.w3.org/1999/02/22-rdf-syntax-ns#langString"
+	rdfDirLangStringIRI = "http://www.w3.org/1999/02/22-rdf-syntax-ns#dirLangString"
+	rdfXMLLiteralIRI    = "http://www.w3.org/1999/02/22-rdf-syntax-ns#XMLLiteral"
 )
 
 // generateCollectionTriples generates rdf:first/rdf:rest triples for a collection.

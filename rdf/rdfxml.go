@@ -499,7 +499,7 @@ func (d *rdfxmlTripleDecoder) readXMLLiteral(start xml.StartElement) (Term, erro
 				xmlContent := strings.Join(parts, "")
 				return Literal{
 					Lexical:  xmlContent,
-					Datatype: IRI{Value: "http://www.w3.org/1999/02/22-rdf-syntax-ns#XMLLiteral"},
+					Datatype: IRI{Value: rdfXMLLiteralIRI},
 				}, nil
 			}
 			parts = append(parts, "</")
@@ -920,7 +920,7 @@ func (d *rdfxmlTripleDecoder) resolveID(id string) string {
 
 func (d *rdfxmlTripleDecoder) newBlankNode() BlankNode {
 	d.blankIDGen++
-	return BlankNode{ID: "genid" + strconv.Itoa(d.blankIDGen)}
+	return BlankNode{ID: fmt.Sprintf("b%d", d.blankIDGen)}
 }
 
 func (d *rdfxmlTripleDecoder) containerKey(term Term) string {

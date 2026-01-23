@@ -500,8 +500,7 @@ func (c *ntCursor) parseLiteral() (Literal, error) {
 		}
 		// langString and dirLangString cannot be used as explicit datatypes
 		// They must be expressed using @lang syntax
-		if dt.Value == "http://www.w3.org/1999/02/22-rdf-syntax-ns#langString" ||
-			dt.Value == "http://www.w3.org/1999/02/22-rdf-syntax-ns#dirLangString" {
+		if dt.Value == rdfLangStringIRI || dt.Value == rdfDirLangStringIRI {
 			return Literal{}, c.errorf("langString and dirLangString cannot be used as explicit datatypes")
 		}
 		return Literal{Lexical: lexical, Datatype: dt}, nil
