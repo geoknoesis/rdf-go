@@ -8,7 +8,7 @@ import (
 
 func TestRDFXMLContainerMembership(t *testing.T) {
 	input := `<?xml version="1.0"?><rdf:RDF xmlns:rdf="` + rdfXMLNS + `"><rdf:Bag><rdf:li>1</rdf:li><rdf:_3>3</rdf:_3><rdf:li>4</rdf:li></rdf:Bag></rdf:RDF>`
-	dec, err := NewTripleDecoder(strings.NewReader(input), TripleFormatRDFXML)
+	dec, err := NewReader(strings.NewReader(input), FormatRDFXML)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

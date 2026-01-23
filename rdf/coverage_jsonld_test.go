@@ -10,15 +10,12 @@ import (
 func TestJSONLDDecoderErrClose(t *testing.T) {
 	// Test error handling with actual decoder
 	input := `invalid json`
-	dec, err := NewTripleDecoder(strings.NewReader(input), TripleFormatJSONLD)
+	dec, err := NewReader(strings.NewReader(input), FormatJSONLD)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if _, err := dec.Next(); err == nil {
 		t.Fatal("expected error")
-	}
-	if dec.Err() == nil {
-		t.Fatal("expected Err() to return error")
 	}
 	if err := dec.Close(); err != nil {
 		t.Fatalf("expected Close to be nil, got %v", err)
@@ -27,7 +24,7 @@ func TestJSONLDDecoderErrClose(t *testing.T) {
 
 func TestJSONLDLoad_ArrayTopLevel(t *testing.T) {
 	input := `[{"@context":{"ex":"http://example.org/"},"@id":"ex:s","ex:p":"v"}]`
-	dec, err := NewTripleDecoder(strings.NewReader(input), TripleFormatJSONLD)
+	dec, err := NewReader(strings.NewReader(input), FormatJSONLD)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -38,7 +35,7 @@ func TestJSONLDLoad_ArrayTopLevel(t *testing.T) {
 
 func TestJSONLDWithVocab(t *testing.T) {
 	input := `{"@context":{"@vocab":"http://example.org/"},"@id":"thing","p":"v"}`
-	dec, err := NewTripleDecoder(strings.NewReader(input), TripleFormatJSONLD)
+	dec, err := NewReader(strings.NewReader(input), FormatJSONLD)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -53,7 +50,7 @@ func TestJSONLDWithVocab(t *testing.T) {
 
 func TestJSONLDValueTypes(t *testing.T) {
 	input := `{"@context":{"ex":"http://example.org/"},"@id":"ex:s","ex:p":[{"@id":"ex:o"},{"@value":"x"},1,true,"str"]}`
-	dec, err := NewTripleDecoder(strings.NewReader(input), TripleFormatJSONLD)
+	dec, err := NewReader(strings.NewReader(input), FormatJSONLD)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -76,7 +73,7 @@ func TestJSONLDExpandTermFallbacks(t *testing.T) {
 
 func TestJSONLDGraphObject(t *testing.T) {
 	input := `{"@context":{"ex":"http://example.org/"},"@graph":{"@id":"ex:s","ex:p":"v"}}`
-	dec, err := NewTripleDecoder(strings.NewReader(input), TripleFormatJSONLD)
+	dec, err := NewReader(strings.NewReader(input), FormatJSONLD)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -87,7 +84,7 @@ func TestJSONLDGraphObject(t *testing.T) {
 
 func TestJSONLDErrorUnsupportedLiteral(t *testing.T) {
 	input := `{"@context":{"ex":"http://example.org/"},"@id":"ex:s","ex:p":null}`
-	dec, err := NewTripleDecoder(strings.NewReader(input), TripleFormatJSONLD)
+	dec, err := NewReader(strings.NewReader(input), FormatJSONLD)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -97,11 +94,11 @@ func TestJSONLDErrorUnsupportedLiteral(t *testing.T) {
 }
 
 func TestJSONLDEncoderErrors(t *testing.T) {
-	enc, err := NewTripleEncoder(failingWriter{}, TripleFormatJSONLD)
+	enc, err := NewWriter(failingWriter{}, FormatJSONLD)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if err := enc.Write(Triple{S: IRI{Value: "s"}, P: IRI{Value: "p"}, O: Literal{Lexical: "v"}}); err != nil {
+	if err := enc.Write(Statement{S: IRI{Value: "s"}, P: IRI{Value: "p"}, O: Literal{Lexical: "v"}, G: nil}); err != nil {
 		t.Fatalf("unexpected write error: %v", err)
 	}
 	if err := enc.Flush(); err == nil {
@@ -109,28 +106,28 @@ func TestJSONLDEncoderErrors(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	enc, err = NewTripleEncoder(&buf, TripleFormatJSONLD)
+	enc, err = NewWriter(&buf, FormatJSONLD)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	_ = enc.Write(Triple{S: IRI{Value: "s"}, P: IRI{Value: "p"}, O: Literal{Lexical: "v"}})
-	_ = enc.Write(Triple{S: IRI{Value: "s2"}, P: IRI{Value: "p2"}, O: IRI{Value: "o2"}})
+	_ = enc.Write(Statement{S: IRI{Value: "s"}, P: IRI{Value: "p"}, O: Literal{Lexical: "v"}, G: nil})
+	_ = enc.Write(Statement{S: IRI{Value: "s2"}, P: IRI{Value: "p2"}, O: IRI{Value: "o2"}, G: nil})
 	if err := enc.Close(); err != nil {
 		t.Fatalf("unexpected close error: %v", err)
 	}
-	enc, err = NewTripleEncoder(&buf, TripleFormatJSONLD)
+	enc, err = NewWriter(&buf, FormatJSONLD)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	_ = enc.Close()
-	if err := enc.Write(Triple{S: IRI{Value: "s"}, P: IRI{Value: "p"}, O: Literal{Lexical: "v"}}); err == nil {
+	if err := enc.Write(Statement{S: IRI{Value: "s"}, P: IRI{Value: "p"}, O: Literal{Lexical: "v"}}); err == nil {
 		t.Fatal("expected closed error")
 	}
 }
 
 func TestJSONLDDecoderEOF(t *testing.T) {
 	input := `{"@context":{"ex":"http://example.org/"},"@id":"ex:s","ex:p":"v"}`
-	dec, err := NewTripleDecoder(strings.NewReader(input), TripleFormatJSONLD)
+	dec, err := NewReader(strings.NewReader(input), FormatJSONLD)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -143,7 +140,7 @@ func TestJSONLDDecoderEOF(t *testing.T) {
 }
 
 func TestJSONLDLoadNonCollection(t *testing.T) {
-	dec, err := NewTripleDecoder(strings.NewReader("5"), TripleFormatJSONLD)
+	dec, err := NewReader(strings.NewReader("5"), FormatJSONLD)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -154,7 +151,7 @@ func TestJSONLDLoadNonCollection(t *testing.T) {
 
 func TestJSONLDLoadArraySkipsNonObjects(t *testing.T) {
 	input := `[{"@context":{"ex":"http://example.org/"},"@id":"ex:s","ex:p":"v"}, "skip"]`
-	dec, err := NewTripleDecoder(strings.NewReader(input), TripleFormatJSONLD)
+	dec, err := NewReader(strings.NewReader(input), FormatJSONLD)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -165,7 +162,7 @@ func TestJSONLDLoadArraySkipsNonObjects(t *testing.T) {
 
 func TestJSONLDLoadGraphError(t *testing.T) {
 	input := `{"@context":{"ex":"http://example.org/"},"@graph":{"ex:p":"v"}}`
-	dec, err := NewTripleDecoder(strings.NewReader(input), TripleFormatJSONLD)
+	dec, err := NewReader(strings.NewReader(input), FormatJSONLD)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -176,7 +173,7 @@ func TestJSONLDLoadGraphError(t *testing.T) {
 
 func TestJSONLDLoadNodeError(t *testing.T) {
 	input := `{"@context":{"ex":"http://example.org/"},"ex:p":"v"}`
-	dec, err := NewTripleDecoder(strings.NewReader(input), TripleFormatJSONLD)
+	dec, err := NewReader(strings.NewReader(input), FormatJSONLD)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -221,7 +218,7 @@ func TestJSONLDGraphArrayError(t *testing.T) {
 }
 
 func TestJSONLDLoadEmptyArray(t *testing.T) {
-	dec, err := NewTripleDecoder(strings.NewReader("[]"), TripleFormatJSONLD)
+	dec, err := NewReader(strings.NewReader("[]"), FormatJSONLD)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -232,7 +229,7 @@ func TestJSONLDLoadEmptyArray(t *testing.T) {
 
 func TestJSONLDLoadArrayNodeError(t *testing.T) {
 	input := `[{"ex:p":"v"}]`
-	dec, err := NewTripleDecoder(strings.NewReader(input), TripleFormatJSONLD)
+	dec, err := NewReader(strings.NewReader(input), FormatJSONLD)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -242,7 +239,7 @@ func TestJSONLDLoadArrayNodeError(t *testing.T) {
 }
 
 func TestJSONLDLoadDecodeError(t *testing.T) {
-	dec, err := NewTripleDecoder(strings.NewReader("{"), TripleFormatJSONLD)
+	dec, err := NewReader(strings.NewReader("{"), FormatJSONLD)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -264,12 +261,12 @@ func TestJSONLDPredicateResolutionError(t *testing.T) {
 }
 
 func TestJSONLDEncoderErrorState(t *testing.T) {
-	enc, err := NewTripleEncoder(failingWriter{}, TripleFormatJSONLD)
+	enc, err := NewWriter(failingWriter{}, FormatJSONLD)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	// Write to trigger error
-	_ = enc.Write(Triple{S: IRI{Value: "s"}, P: IRI{Value: "p"}, O: Literal{Lexical: "v"}})
+	_ = enc.Write(Statement{S: IRI{Value: "s"}, P: IRI{Value: "p"}, O: Literal{Lexical: "v"}, G: nil})
 	// Flush should fail
 	if err := enc.Flush(); err == nil {
 		t.Fatal("expected flush error")
@@ -365,12 +362,12 @@ func appendQuadSink(quads *[]Quad) jsonldQuadSink {
 }
 
 func TestJSONLDWriteErrors(t *testing.T) {
-	enc, err := NewTripleEncoder(failingWriter{}, TripleFormatJSONLD)
+	enc, err := NewWriter(failingWriter{}, FormatJSONLD)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	// Write should succeed initially
-	if err := enc.Write(Triple{S: IRI{Value: "s"}, P: IRI{Value: "p"}, O: Literal{Lexical: "v"}}); err != nil {
+	if err := enc.Write(Statement{S: IRI{Value: "s"}, P: IRI{Value: "p"}, O: Literal{Lexical: "v"}}); err != nil {
 		t.Fatalf("unexpected write error: %v", err)
 	}
 	// Flush should fail
@@ -378,7 +375,7 @@ func TestJSONLDWriteErrors(t *testing.T) {
 		t.Fatal("expected flush error")
 	}
 
-	enc, err = NewTripleEncoder(&bytes.Buffer{}, TripleFormatJSONLD)
+	enc, err = NewWriter(&bytes.Buffer{}, FormatJSONLD)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -394,23 +391,23 @@ func (errWriter) Write([]byte) (int, error) { return 0, io.ErrClosedPipe }
 
 func TestJSONLDWriteCommaError(t *testing.T) {
 	// Test that writing multiple triples works
-	enc, err := NewTripleEncoder(&bytes.Buffer{}, TripleFormatJSONLD)
+	enc, err := NewWriter(&bytes.Buffer{}, FormatJSONLD)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	_ = enc.Write(Triple{S: IRI{Value: "s"}, P: IRI{Value: "p"}, O: Literal{Lexical: "v"}})
-	_ = enc.Write(Triple{S: IRI{Value: "s2"}, P: IRI{Value: "p2"}, O: Literal{Lexical: "v2"}})
+	_ = enc.Write(Statement{S: IRI{Value: "s"}, P: IRI{Value: "p"}, O: Literal{Lexical: "v"}, G: nil})
+	_ = enc.Write(Statement{S: IRI{Value: "s2"}, P: IRI{Value: "p2"}, O: Literal{Lexical: "v2"}})
 	if err := enc.Close(); err != nil {
 		t.Fatalf("unexpected close error: %v", err)
 	}
 }
 
 func TestJSONLDWriteOpenError(t *testing.T) {
-	enc, err := NewTripleEncoder(errWriter{}, TripleFormatJSONLD)
+	enc, err := NewWriter(errWriter{}, FormatJSONLD)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if err := enc.Write(Triple{S: IRI{Value: "s"}, P: IRI{Value: "p"}, O: Literal{Lexical: "v"}}); err == nil {
+	if err := enc.Write(Statement{S: IRI{Value: "s"}, P: IRI{Value: "p"}, O: Literal{Lexical: "v"}}); err == nil {
 		t.Fatal("expected write error")
 	}
 }
@@ -429,34 +426,34 @@ func (f *failAfterWriter) Write(p []byte) (int, error) {
 
 func TestJSONLDWriteFragmentError(t *testing.T) {
 	writer := &failAfterWriter{}
-	enc, err := NewTripleEncoder(writer, TripleFormatJSONLD)
+	enc, err := NewWriter(writer, FormatJSONLD)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	_ = enc.Write(Triple{S: IRI{Value: "s"}, P: IRI{Value: "p"}, O: Literal{Lexical: "v"}})
+	_ = enc.Write(Statement{S: IRI{Value: "s"}, P: IRI{Value: "p"}, O: Literal{Lexical: "v"}, G: nil})
 	// Second write should fail due to writer
-	if err := enc.Write(Triple{S: IRI{Value: "s2"}, P: IRI{Value: "p2"}, O: Literal{Lexical: "v2"}}); err == nil {
+	if err := enc.Write(Statement{S: IRI{Value: "s2"}, P: IRI{Value: "p2"}, O: Literal{Lexical: "v2"}}); err == nil {
 		t.Fatal("expected write error")
 	}
 }
 
 func TestJSONLDCloseWriteError(t *testing.T) {
-	enc, err := NewTripleEncoder(&bytes.Buffer{}, TripleFormatJSONLD)
+	enc, err := NewWriter(&bytes.Buffer{}, FormatJSONLD)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	_ = enc.Write(Triple{S: IRI{Value: "s"}, P: IRI{Value: "p"}, O: Literal{Lexical: "v"}})
+	_ = enc.Write(Statement{S: IRI{Value: "s"}, P: IRI{Value: "p"}, O: Literal{Lexical: "v"}, G: nil})
 	if err := enc.Close(); err != nil {
 		t.Fatalf("unexpected close error: %v", err)
 	}
 }
 
 func TestJSONLDCloseWithErrorState(t *testing.T) {
-	enc, err := NewTripleEncoder(errWriter{}, TripleFormatJSONLD)
+	enc, err := NewWriter(errWriter{}, FormatJSONLD)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	_ = enc.Write(Triple{S: IRI{Value: "s"}, P: IRI{Value: "p"}, O: Literal{Lexical: "v"}})
+	_ = enc.Write(Statement{S: IRI{Value: "s"}, P: IRI{Value: "p"}, O: Literal{Lexical: "v"}, G: nil})
 	// Close should handle error state
 	if err := enc.Close(); err == nil {
 		t.Fatal("expected close error")

@@ -98,6 +98,61 @@ type Triple struct {
 	O Term
 }
 
+// Statement represents an RDF statement, which can be either a triple or a quad.
+// If G is nil, it represents a triple. If G is non-nil, it represents a quad.
+type Statement struct {
+	// S is the subject.
+	S Term
+	// P is the predicate.
+	P IRI
+	// O is the object.
+	O Term
+	// G is the graph name, or nil for triples (default graph).
+	G Term
+}
+
+// IsQuad reports whether the statement is a quad (has a graph).
+func (s Statement) IsQuad() bool {
+	return s.G != nil
+}
+
+// IsTriple reports whether the statement is a triple (no graph).
+func (s Statement) IsTriple() bool {
+	return s.G == nil
+}
+
+// AsTriple returns the statement as a triple (ignores graph).
+func (s Statement) AsTriple() Triple {
+	return Triple{S: s.S, P: s.P, O: s.O}
+}
+
+// AsQuad returns the statement as a quad.
+func (s Statement) AsQuad() Quad {
+	return Quad{S: s.S, P: s.P, O: s.O, G: s.G}
+}
+
+// ToStatement converts a triple to a statement.
+func (t Triple) ToStatement() Statement {
+	return Statement{S: t.S, P: t.P, O: t.O, G: nil}
+}
+
+// ToStatement converts a quad to a statement.
+func (q Quad) ToStatement() Statement {
+	return Statement{S: q.S, P: q.P, O: q.O, G: q.G}
+}
+
+// NewTriple creates a Statement representing a triple (G is nil).
+// This is a convenience function for creating triple statements.
+func NewTriple(s Term, p IRI, o Term) Statement {
+	return Statement{S: s, P: p, O: o, G: nil}
+}
+
+// NewQuad creates a Statement representing a quad with the specified graph.
+// This is a convenience function for creating quad statements.
+func NewQuad(s Term, p IRI, o Term, g Term) Statement {
+	return Statement{S: s, P: p, O: o, G: g}
+}
+
 // Quad is an RDF quad (triple + optional graph name).
 type Quad struct {
 	// S is the subject.

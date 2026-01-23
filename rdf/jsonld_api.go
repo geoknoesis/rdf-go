@@ -205,14 +205,42 @@ func NewJSONLDQuadEncoder(w io.Writer, opts JSONLDOptions) QuadEncoder {
 func ParseJSONLDTriples(ctx context.Context, r io.Reader, opts JSONLDOptions, handler TripleHandler) error {
 	decoder := NewJSONLDTripleDecoder(r, opts)
 	defer decoder.Close()
-	return parseTriplesWithDecoder(ctx, decoder, handler)
+	for {
+		if ctx != nil && ctx.Err() != nil {
+			return ctx.Err()
+		}
+		triple, err := decoder.Next()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if err := handler.Handle(triple); err != nil {
+			return err
+		}
+	}
 }
 
 // ParseJSONLDQuads streams JSON-LD quads to a handler.
 func ParseJSONLDQuads(ctx context.Context, r io.Reader, opts JSONLDOptions, handler QuadHandler) error {
 	decoder := NewJSONLDQuadDecoder(r, opts)
 	defer decoder.Close()
-	return parseQuadsWithDecoder(ctx, decoder, handler)
+	for {
+		if ctx != nil && ctx.Err() != nil {
+			return ctx.Err()
+		}
+		quad, err := decoder.Next()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if err := handler.Handle(quad); err != nil {
+			return err
+		}
+	}
 }
 
 type jsonGoldDocumentLoader struct {
@@ -270,22 +298,25 @@ func newJSONGoldOptions(ctx context.Context, opts JSONLDOptions) *ld.JsonLdOptio
 }
 
 func parseNQuadsString(ctx context.Context, nquads string) ([]Quad, error) {
-	var quads []Quad
-	err := ParseQuads(ctx, strings.NewReader(nquads), QuadFormatNQuads, QuadHandlerFunc(func(q Quad) error {
-		quads = append(quads, q)
-		return nil
-	}))
-	return quads, err
+	stmts, err := ReadAll(ctx, strings.NewReader(nquads), FormatNQuads)
+	if err != nil {
+		return nil, err
+	}
+	quads := make([]Quad, len(stmts))
+	for i, s := range stmts {
+		quads[i] = s.AsQuad()
+	}
+	return quads, nil
 }
 
 func quadsToNQuads(quads []Quad) (string, error) {
 	var buf bytes.Buffer
-	enc, err := NewQuadEncoder(&buf, QuadFormatNQuads)
+	enc, err := NewWriter(&buf, FormatNQuads)
 	if err != nil {
 		return "", err
 	}
 	for _, q := range quads {
-		if err := enc.Write(q); err != nil {
+		if err := enc.Write(q.ToStatement()); err != nil {
 			_ = enc.Close()
 			return "", err
 		}

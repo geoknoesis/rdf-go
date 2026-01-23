@@ -8,7 +8,8 @@ import (
 // DetectFormat attempts to detect the RDF format from input by examining the first few bytes.
 // It returns the detected format and whether detection was successful.
 // Detection is based on format signatures and heuristics.
-func DetectFormat(r io.Reader) (TripleFormat, bool) {
+// This is an internal helper function.
+func DetectFormat(r io.Reader) (Format, bool) {
 	// Read a sample of the input (first 512 bytes should be enough)
 	buf := make([]byte, 512)
 	n, err := r.Read(buf)
@@ -27,20 +28,20 @@ func DetectFormat(r io.Reader) (TripleFormat, bool) {
 	if strings.HasPrefix(sample, "{") || strings.HasPrefix(sample, "[") {
 		// Check for JSON-LD keywords
 		if strings.Contains(sample, "@context") || strings.Contains(sample, "@id") || strings.Contains(sample, "@type") {
-			return TripleFormatJSONLD, true
+			return FormatJSONLD, true
 		}
 		// Could still be JSON-LD even without explicit keywords
 		if strings.HasPrefix(sample, "{") || strings.HasPrefix(sample, "[") {
 			// Check if it's valid JSON structure
 			if isValidJSONStructure(sample) {
-				return TripleFormatJSONLD, true
+				return FormatJSONLD, true
 			}
 		}
 	}
 
 	// Check for RDF/XML (starts with <?xml or <rdf:)
 	if strings.HasPrefix(sample, "<?xml") || strings.HasPrefix(sample, "<rdf:") || strings.HasPrefix(sample, "<rdf ") {
-		return TripleFormatRDFXML, true
+		return FormatRDFXML, true
 	}
 
 	// Check for Turtle/TriG directives (@prefix, @base, PREFIX, BASE)
@@ -52,9 +53,9 @@ func DetectFormat(r io.Reader) (TripleFormat, bool) {
 		if strings.Contains(upper, "GRAPH") || strings.Contains(sample, "{") {
 			// Could be TriG, but we can only detect triple formats here
 			// TriG is a quad format, so we'd need DetectQuadFormat
-			return TripleFormatTurtle, true
+			return FormatTurtle, true
 		}
-		return TripleFormatTurtle, true
+		return FormatTurtle, true
 	}
 
 	// Check for N-Triples/N-Quads pattern (IRI <...> or blank node _:)
@@ -73,7 +74,7 @@ func DetectFormat(r io.Reader) (TripleFormat, bool) {
 		angleCount := strings.Count(sample, "<")
 		if angleCount >= 3 || strings.Contains(sample, " _:") || strings.HasPrefix(sample, "_:") {
 			// Default to N-Triples (more common)
-			return TripleFormatNTriples, true
+			return FormatNTriples, true
 		}
 	}
 
@@ -98,7 +99,7 @@ func DetectFormat(r io.Reader) (TripleFormat, bool) {
 	
 	if hasTurtlePattern {
 		// Likely Turtle (uses prefixes, blank nodes, or collections)
-		return TripleFormatTurtle, true
+		return FormatTurtle, true
 	}
 
 	// Default: unable to detect
@@ -106,7 +107,8 @@ func DetectFormat(r io.Reader) (TripleFormat, bool) {
 }
 
 // DetectQuadFormat attempts to detect quad-capable RDF formats.
-func DetectQuadFormat(r io.Reader) (QuadFormat, bool) {
+// This is an internal helper function.
+func DetectQuadFormat(r io.Reader) (Format, bool) {
 	// Read a sample of the input
 	buf := make([]byte, 512)
 	n, err := r.Read(buf)
@@ -127,11 +129,11 @@ func DetectQuadFormat(r io.Reader) (QuadFormat, bool) {
 		// Check for TriG directives
 		if strings.HasPrefix(upper, "@PREFIX") || strings.HasPrefix(upper, "PREFIX") ||
 			strings.HasPrefix(upper, "@BASE") || strings.HasPrefix(upper, "BASE") {
-			return QuadFormatTriG, true
+			return FormatTriG, true
 		}
 		// If it has { and looks like Turtle, it's likely TriG
 		if strings.Contains(sample, "{") && (strings.Contains(sample, "<") || strings.Contains(sample, ":")) {
-			return QuadFormatTriG, true
+			return FormatTriG, true
 		}
 	}
 
@@ -150,12 +152,12 @@ func DetectQuadFormat(r io.Reader) (QuadFormat, bool) {
 				// Count all < in the line
 				totalAngles := strings.Count(line, "<")
 				if totalAngles >= 4 {
-					return QuadFormatNQuads, true
+					return FormatNQuads, true
 				}
 			}
 		}
 		// Default to N-Quads if we can't tell (conservative)
-		return QuadFormatNQuads, true
+		return FormatNQuads, true
 	}
 
 	return "", false

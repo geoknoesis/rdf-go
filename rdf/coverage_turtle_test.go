@@ -8,16 +8,14 @@ import (
 func TestTurtleDecoderErrClose(t *testing.T) {
 	// Test error handling with actual decoder
 	input := `invalid`
-	dec, err := NewTripleDecoder(strings.NewReader(input), TripleFormatTurtle)
+	dec, err := NewReader(strings.NewReader(input), FormatTurtle)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if _, err := dec.Next(); err == nil {
 		t.Fatal("expected error")
 	}
-	if dec.Err() == nil {
-		t.Fatal("expected Err() to return error")
-	}
+	// Unified Reader doesn't have Err() method - errors are returned from Next()
 	if err := dec.Close(); err != nil {
 		t.Fatalf("expected Close nil, got %v", err)
 	}
@@ -217,7 +215,7 @@ func TestTurtleParseLiteralExpectedError(t *testing.T) {
 
 func TestTriGMultiLineGraph(t *testing.T) {
 	input := "@prefix ex: <http://example.org/> .\nex:g {\nex:s ex:p ex:o .\n}\n"
-	dec, err := NewQuadDecoder(strings.NewReader(input), QuadFormatTriG)
+	dec, err := NewReader(strings.NewReader(input), FormatTriG)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -232,7 +230,7 @@ func TestTriGMultiLineGraph(t *testing.T) {
 
 func TestTurtleNextSkipsEmptyAndComment(t *testing.T) {
 	input := "\n# comment\n@prefix ex: <http://example.org/> .\nex:s ex:p ex:o .\n"
-	dec, err := NewTripleDecoder(strings.NewReader(input), TripleFormatTurtle)
+	dec, err := NewReader(strings.NewReader(input), FormatTurtle)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -266,7 +264,7 @@ func TestTurtleParseTripleTermDirect(t *testing.T) {
 
 func TestTriGGraphReset(t *testing.T) {
 	input := "@prefix ex: <http://example.org/> .\nex:g {\n}\nex:s ex:p ex:o .\n"
-	dec, err := NewQuadDecoder(strings.NewReader(input), QuadFormatTriG)
+	dec, err := NewReader(strings.NewReader(input), FormatTriG)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -281,7 +279,7 @@ func TestTriGGraphReset(t *testing.T) {
 
 func TestTurtleNextGraphOpenLine(t *testing.T) {
 	input := "@prefix ex: <http://example.org/> .\nex:g {\nex:s ex:p ex:o .\n"
-	dec, err := NewQuadDecoder(strings.NewReader(input), QuadFormatTriG)
+	dec, err := NewReader(strings.NewReader(input), FormatTriG)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -292,7 +290,7 @@ func TestTurtleNextGraphOpenLine(t *testing.T) {
 
 func TestTriGInlineGraph(t *testing.T) {
 	input := "<g> { <s> <p> <o> . }"
-	dec, err := NewQuadDecoder(strings.NewReader(input), QuadFormatTriG)
+	dec, err := NewReader(strings.NewReader(input), FormatTriG)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -309,25 +307,25 @@ func TestTurtlePredicateNonIRI(t *testing.T) {
 }
 
 func TestTurtleEncoderErrors(t *testing.T) {
-	enc, err := NewTripleEncoder(failingWriter{}, TripleFormatTurtle)
+	enc, err := NewWriter(failingWriter{}, FormatTurtle)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	_ = enc.Write(Triple{S: IRI{Value: "s"}, P: IRI{Value: "p"}, O: IRI{Value: "o"}})
+	_ = enc.Write(Statement{S: IRI{Value: "s"}, P: IRI{Value: "p"}, O: IRI{Value: "o"}})
 	if err := enc.Flush(); err == nil {
 		t.Fatal("expected flush error")
 	}
 }
 
 func TestTurtleEncoderErrorState(t *testing.T) {
-	enc, err := NewTripleEncoder(&strings.Builder{}, TripleFormatTurtle)
+	enc, err := NewWriter(&strings.Builder{}, FormatTurtle)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	_ = enc.Write(Triple{S: IRI{Value: "s"}, P: IRI{Value: "p"}, O: IRI{Value: "o"}})
+	_ = enc.Write(Statement{S: IRI{Value: "s"}, P: IRI{Value: "p"}, O: IRI{Value: "o"}})
 	// Close to set error state
 	_ = enc.Close()
-	if err := enc.Write(Triple{S: IRI{Value: "s2"}, P: IRI{Value: "p2"}, O: IRI{Value: "o2"}}); err == nil {
+	if err := enc.Write(Statement{S: IRI{Value: "s2"}, P: IRI{Value: "p2"}, O: IRI{Value: "o2"}}); err == nil {
 		t.Fatal("expected cached error")
 	}
 	if err := enc.Flush(); err == nil {
@@ -336,21 +334,21 @@ func TestTurtleEncoderErrorState(t *testing.T) {
 }
 
 func TestTurtleEncoderDefaultGraph(t *testing.T) {
-	enc, err := NewQuadEncoder(&strings.Builder{}, QuadFormatTriG)
+	enc, err := NewWriter(&strings.Builder{}, FormatTriG)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if err := enc.Write(Quad{S: IRI{Value: "s"}, P: IRI{Value: "p"}, O: IRI{Value: "o"}}); err != nil {
+	if err := enc.Write(Statement{S: IRI{Value: "s"}, P: IRI{Value: "p"}, O: IRI{Value: "o"}, G: nil}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
 func TestTriGEncoderGraph(t *testing.T) {
-	enc, err := NewQuadEncoder(&strings.Builder{}, QuadFormatTriG)
+	enc, err := NewWriter(&strings.Builder{}, FormatTriG)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if err := enc.Write(Quad{S: IRI{Value: "s"}, P: IRI{Value: "p"}, O: IRI{Value: "o"}, G: IRI{Value: "g"}}); err != nil {
+	if err := enc.Write(Statement{S: IRI{Value: "s"}, P: IRI{Value: "p"}, O: IRI{Value: "o"}, G: IRI{Value: "g"}}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

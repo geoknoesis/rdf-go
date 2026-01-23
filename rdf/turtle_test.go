@@ -7,7 +7,7 @@ import (
 
 func TestTurtleDirectiveAndPrefixedName(t *testing.T) {
 	input := "@prefix ex: <http://example.org/> .\nex:s ex:p \"v\" .\n"
-	dec, err := NewTripleDecoder(strings.NewReader(input), TripleFormatTurtle)
+	dec, err := NewReader(strings.NewReader(input), FormatTurtle)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -22,7 +22,7 @@ func TestTurtleDirectiveAndPrefixedName(t *testing.T) {
 
 func TestTurtleBaseIRI(t *testing.T) {
 	input := "@base <http://example.org/> .\n<rel> <http://example.org/p> <http://example.org/o> .\n"
-	dec, err := NewTripleDecoder(strings.NewReader(input), TripleFormatTurtle)
+	dec, err := NewReader(strings.NewReader(input), FormatTurtle)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -37,7 +37,7 @@ func TestTurtleBaseIRI(t *testing.T) {
 
 func TestTurtleTripleTerm(t *testing.T) {
 	input := "<< <http://example.org/s> <http://example.org/p> <http://example.org/o> >> <http://example.org/p2> <http://example.org/o2> .\n"
-	dec, err := NewTripleDecoder(strings.NewReader(input), TripleFormatTurtle)
+	dec, err := NewReader(strings.NewReader(input), FormatTurtle)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -52,7 +52,7 @@ func TestTurtleTripleTerm(t *testing.T) {
 
 func TestTurtleInvalidPredicate(t *testing.T) {
 	input := "_:b1 \"literal\" <http://example.org/o> .\n"
-	dec, err := NewTripleDecoder(strings.NewReader(input), TripleFormatTurtle)
+	dec, err := NewReader(strings.NewReader(input), FormatTurtle)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -63,7 +63,7 @@ func TestTurtleInvalidPredicate(t *testing.T) {
 
 func TestTurtleUnknownPrefix(t *testing.T) {
 	input := "ex:s ex:p ex:o .\n"
-	dec, err := NewTripleDecoder(strings.NewReader(input), TripleFormatTurtle)
+	dec, err := NewReader(strings.NewReader(input), FormatTurtle)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -74,7 +74,7 @@ func TestTurtleUnknownPrefix(t *testing.T) {
 
 func TestTriGGraphBlock(t *testing.T) {
 	input := "@prefix ex: <http://example.org/> .\nex:g { ex:s ex:p ex:o . }\n"
-	dec, err := NewQuadDecoder(strings.NewReader(input), QuadFormatTriG)
+	dec, err := NewReader(strings.NewReader(input), FormatTriG)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -89,7 +89,7 @@ func TestTriGGraphBlock(t *testing.T) {
 
 func TestTurtleLiteralDatatype(t *testing.T) {
 	input := "@prefix ex: <http://example.org/> .\nex:s ex:p \"1\"^^ex:dt .\n"
-	dec, err := NewTripleDecoder(strings.NewReader(input), TripleFormatTurtle)
+	dec, err := NewReader(strings.NewReader(input), FormatTurtle)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -104,7 +104,7 @@ func TestTurtleLiteralDatatype(t *testing.T) {
 
 func TestTurtleLangLiteral(t *testing.T) {
 	input := "@prefix ex: <http://example.org/> .\nex:s ex:p \"hello\"@en .\n"
-	dec, err := NewTripleDecoder(strings.NewReader(input), TripleFormatTurtle)
+	dec, err := NewReader(strings.NewReader(input), FormatTurtle)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -119,7 +119,7 @@ func TestTurtleLangLiteral(t *testing.T) {
 
 func TestTurtleBadTripleTerm(t *testing.T) {
 	input := "<< <http://example.org/s> <http://example.org/p> <http://example.org/o> <http://example.org/p2> <http://example.org/o2> .\n"
-	dec, err := NewTripleDecoder(strings.NewReader(input), TripleFormatTurtle)
+	dec, err := NewReader(strings.NewReader(input), FormatTurtle)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

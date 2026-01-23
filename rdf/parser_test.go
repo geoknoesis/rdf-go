@@ -7,7 +7,7 @@ import (
 
 func TestNTriplesParser_Parse(t *testing.T) {
 	input := "<http://example.org/s> <http://example.org/p> <http://example.org/o> .\n"
-	dec, err := NewTripleDecoder(strings.NewReader(input), TripleFormatNTriples)
+	dec, err := NewReader(strings.NewReader(input), FormatNTriples)
 	if err != nil {
 		t.Fatalf("decoder error: %v", err)
 	}
@@ -19,7 +19,7 @@ func TestNTriplesParser_Parse(t *testing.T) {
 
 func TestNQuadsParser_Parse(t *testing.T) {
 	input := "<http://example.org/s> <http://example.org/p> <http://example.org/o> <http://example.org/g> .\n"
-	dec, err := NewQuadDecoder(strings.NewReader(input), QuadFormatNQuads)
+	dec, err := NewReader(strings.NewReader(input), FormatNQuads)
 	if err != nil {
 		t.Fatalf("decoder error: %v", err)
 	}
@@ -34,7 +34,7 @@ func TestNQuadsParser_Parse(t *testing.T) {
 
 func TestTurtleParser_Parse(t *testing.T) {
 	input := "@prefix ex: <http://example.org/> .\nex:s ex:p ex:o .\n"
-	dec, err := NewTripleDecoder(strings.NewReader(input), TripleFormatTurtle)
+	dec, err := NewReader(strings.NewReader(input), FormatTurtle)
 	if err != nil {
 		t.Fatalf("decoder error: %v", err)
 	}

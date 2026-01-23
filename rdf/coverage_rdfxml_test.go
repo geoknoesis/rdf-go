@@ -10,16 +10,14 @@ import (
 func TestRDFXMLDecoderErrClose(t *testing.T) {
 	// Test error handling with actual decoder
 	input := `invalid xml`
-	dec, err := NewTripleDecoder(strings.NewReader(input), TripleFormatRDFXML)
+	dec, err := NewReader(strings.NewReader(input), FormatRDFXML)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if _, err := dec.Next(); err == nil {
 		t.Fatal("expected error")
 	}
-	if dec.Err() == nil {
-		t.Fatal("expected Err() to return error")
-	}
+	// Unified Reader doesn't have Err() method - errors are returned from Next()
 	if err := dec.Close(); err != nil {
 		t.Fatalf("expected Close nil, got %v", err)
 	}
@@ -32,7 +30,7 @@ func TestRDFXMLSubjectBranches(t *testing.T) {
 <rdf:Description rdf:nodeID="b3"><ex:p xmlns:ex="http://example.org/">v</ex:p></rdf:Description>
 <rdf:Description><ex:p xmlns:ex="http://example.org/">v</ex:p></rdf:Description>
 </rdf:RDF>`
-	dec, _ := NewTripleDecoder(strings.NewReader(input), TripleFormatRDFXML)
+	dec, _ := NewReader(strings.NewReader(input), FormatRDFXML)
 	for i := 0; i < 4; i++ {
 		if _, err := dec.Next(); err != nil {
 			t.Fatalf("unexpected error at %d: %v", i, err)
@@ -50,7 +48,7 @@ func TestRDFXMLConsumeElementEOF(t *testing.T) {
 
 func TestRDFXMLLiteralObject(t *testing.T) {
 	input := `<?xml version="1.0"?><rdf:RDF xmlns:rdf="` + rdfXMLNS + `"><rdf:Description rdf:about="http://example.org/s"><ex:p xmlns:ex="http://example.org/">literal</ex:p></rdf:Description></rdf:RDF>`
-	dec, _ := NewTripleDecoder(strings.NewReader(input), TripleFormatRDFXML)
+	dec, _ := NewReader(strings.NewReader(input), FormatRDFXML)
 	triple, err := dec.Next()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -62,7 +60,7 @@ func TestRDFXMLLiteralObject(t *testing.T) {
 
 func TestRDFXMLNextNonRDFRoot(t *testing.T) {
 	input := `<?xml version="1.0"?><ex:Thing xmlns:ex="http://example.org/" xmlns:rdf="` + rdfXMLNS + `" rdf:about="http://example.org/s"><ex:p>v</ex:p></ex:Thing>`
-	dec, _ := NewTripleDecoder(strings.NewReader(input), TripleFormatRDFXML)
+	dec, _ := NewReader(strings.NewReader(input), FormatRDFXML)
 	if _, err := dec.Next(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -70,7 +68,7 @@ func TestRDFXMLNextNonRDFRoot(t *testing.T) {
 
 func TestRDFXMLReadPredicateElementsError(t *testing.T) {
 	input := `<?xml version="1.0"?><rdf:RDF xmlns:rdf="` + rdfXMLNS + `"><rdf:Description rdf:about="http://example.org/s"><ex:p xmlns:ex="http://example.org/">`
-	dec, _ := NewTripleDecoder(strings.NewReader(input), TripleFormatRDFXML)
+	dec, _ := NewReader(strings.NewReader(input), FormatRDFXML)
 	if _, err := dec.Next(); err == nil {
 		t.Fatal("expected error for truncated XML")
 	}
@@ -78,7 +76,7 @@ func TestRDFXMLReadPredicateElementsError(t *testing.T) {
 
 func TestRDFXMLEmptyDescription(t *testing.T) {
 	input := `<?xml version="1.0"?><rdf:RDF xmlns:rdf="` + rdfXMLNS + `"><rdf:Description rdf:about="http://example.org/s"></rdf:Description></rdf:RDF>`
-	dec, _ := NewTripleDecoder(strings.NewReader(input), TripleFormatRDFXML)
+	dec, _ := NewReader(strings.NewReader(input), FormatRDFXML)
 	if _, err := dec.Next(); err != io.EOF {
 		t.Fatalf("expected EOF, got %v", err)
 	}
@@ -86,7 +84,7 @@ func TestRDFXMLEmptyDescription(t *testing.T) {
 
 func TestRDFXMLTypeQueue(t *testing.T) {
 	input := `<?xml version="1.0"?><rdf:RDF xmlns:rdf="` + rdfXMLNS + `"><ex:Thing xmlns:ex="http://example.org/" rdf:about="http://example.org/s"><ex:p>v</ex:p></ex:Thing></rdf:RDF>`
-	dec, _ := NewTripleDecoder(strings.NewReader(input), TripleFormatRDFXML)
+	dec, _ := NewReader(strings.NewReader(input), FormatRDFXML)
 	if _, err := dec.Next(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -97,7 +95,7 @@ func TestRDFXMLTypeQueue(t *testing.T) {
 
 func TestRDFXMLNextSkipsNonNodeElements(t *testing.T) {
 	input := `<?xml version="1.0"?><rdf:RDF xmlns:rdf="` + rdfXMLNS + `"><rdf:Bag></rdf:Bag></rdf:RDF>`
-	dec, _ := NewTripleDecoder(strings.NewReader(input), TripleFormatRDFXML)
+	dec, _ := NewReader(strings.NewReader(input), FormatRDFXML)
 	if _, err := dec.Next(); err != nil {
 		t.Fatalf("expected type triple, got %v", err)
 	}
@@ -108,14 +106,14 @@ func TestRDFXMLNextSkipsNonNodeElements(t *testing.T) {
 
 func TestRDFXMLNestedPredicateError(t *testing.T) {
 	input := `<?xml version="1.0"?><rdf:RDF xmlns:rdf="` + rdfXMLNS + `"><rdf:Description rdf:about="http://example.org/s"><ex:p xmlns:ex="http://example.org/"><ex:inner>v</ex:inner></ex:p></rdf:Description></rdf:RDF>`
-	dec, _ := NewTripleDecoder(strings.NewReader(input), TripleFormatRDFXML)
+	dec, _ := NewReader(strings.NewReader(input), FormatRDFXML)
 	if _, err := dec.Next(); err == nil {
 		t.Fatal("expected nested predicate error")
 	}
 }
 
 func TestRDFXMLEncoderCloseWithoutWrite(t *testing.T) {
-	enc, err := NewTripleEncoder(&bytes.Buffer{}, TripleFormatRDFXML)
+	enc, err := NewWriter(&bytes.Buffer{}, FormatRDFXML)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -125,11 +123,11 @@ func TestRDFXMLEncoderCloseWithoutWrite(t *testing.T) {
 }
 
 func TestRDFXMLEncoderWriteErrors(t *testing.T) {
-	enc, err := NewTripleEncoder(failingWriter{}, TripleFormatRDFXML)
+	enc, err := NewWriter(failingWriter{}, FormatRDFXML)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	err = enc.Write(Triple{
+	err = enc.Write(Statement{
 		S: IRI{Value: "http://example.org/s"},
 		P: IRI{Value: "http://example.org/p"},
 		O: IRI{Value: "http://example.org/o"},
@@ -141,11 +139,11 @@ func TestRDFXMLEncoderWriteErrors(t *testing.T) {
 		t.Fatal("expected flush error")
 	}
 
-	enc, err = NewTripleEncoder(failingWriter{}, TripleFormatRDFXML)
+	enc, err = NewWriter(failingWriter{}, FormatRDFXML)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	_ = enc.Write(Triple{
+	_ = enc.Write(Statement{
 		S: IRI{Value: "http://example.org/s"},
 		P: IRI{Value: "http://example.org/p"},
 		O: Literal{Lexical: "v"},
@@ -156,11 +154,11 @@ func TestRDFXMLEncoderWriteErrors(t *testing.T) {
 }
 
 func TestRDFXMLEncoderUnsupportedObjectExtra(t *testing.T) {
-	enc, err := NewTripleEncoder(&bytes.Buffer{}, TripleFormatRDFXML)
+	enc, err := NewWriter(&bytes.Buffer{}, FormatRDFXML)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	err = enc.Write(Triple{
+	err = enc.Write(Statement{
 		S: IRI{Value: "http://example.org/s"},
 		P: IRI{Value: "http://example.org/p"},
 		O: customTerm{},
@@ -171,12 +169,12 @@ func TestRDFXMLEncoderUnsupportedObjectExtra(t *testing.T) {
 }
 
 func TestRDFXMLEncoderClosedError(t *testing.T) {
-	enc, err := NewTripleEncoder(&bytes.Buffer{}, TripleFormatRDFXML)
+	enc, err := NewWriter(&bytes.Buffer{}, FormatRDFXML)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	_ = enc.Close()
-	if err := enc.Write(Triple{S: IRI{Value: "s"}, P: IRI{Value: "p"}, O: IRI{Value: "o"}}); err == nil {
+	if err := enc.Write(Statement{S: IRI{Value: "s"}, P: IRI{Value: "p"}, O: IRI{Value: "o"}}); err == nil {
 		t.Fatal("expected closed error")
 	}
 	if err := enc.Flush(); err == nil {

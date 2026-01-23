@@ -13,11 +13,13 @@ Published by **Geoknoesis LLC** - www.geoknoesis.com
 
 ## Features
 
-- Streaming decoders (pull style) and encoders (push style).
-- Type-safe API: separate triple and quad decoders/encoders.
-- Convenience helpers: `ParseTriples`, `ParseQuads`, `ParseTriplesChan`, `ParseQuadsChan`.
+- Streaming readers (pull style) and writers (push style).
+- Unified API: single `Reader` and `Writer` interfaces for all formats.
+- `Statement` type: represents either a triple (G is nil) or a quad (G is non-nil).
+- Convenience helpers: `Parse`, `ReadAll`, `WriteAll`.
 - RDF-star via `TripleTerm` values.
 - Multiple formats: Turtle, TriG, N-Triples, N-Quads, RDF/XML, JSON-LD.
+- Automatic format detection with `FormatAuto`.
 
 ## Install
 
@@ -27,206 +29,376 @@ go get github.com/geoknoesis/rdf-go
 
 ## Quick Start
 
-### Decode Triples (pull)
+### Parse with Auto-Detection
+
+The easiest way to parse RDF when you don't know the format. The library automatically detects the format from the input content:
 
 ```go
-input := `<http://example.org/s> <http://example.org/p> "v" .`
-dec, err := rdf.NewTripleDecoder(strings.NewReader(input), rdf.TripleFormatNTriples)
+import (
+    "context"
+    "io"
+    "github.com/geoknoesis/rdf-go"
+)
+
+// Parse with auto-detection: FormatAuto tells the library to detect the format
+// The handler function is called for each statement found in the input
+err := rdf.Parse(context.Background(), reader, rdf.FormatAuto, func(s rdf.Statement) error {
+    // Each statement contains S (subject), P (predicate), O (object), and G (graph)
+    // For triples, G will be nil. For quads (named graphs), G will be non-nil
+    fmt.Printf("Subject: %s, Predicate: %s, Object: %s\n", 
+        s.S.String(), s.P.String(), s.O.String())
+    
+    // Check if this is a quad (has a graph name)
+    if s.IsQuad() {
+        fmt.Printf("  Graph: %s\n", s.G.String())
+    }
+    
+    // Return nil to continue processing, or an error to stop
+    return nil
+})
+
 if err != nil {
-    // handle error
+    // Handle parsing errors (format detection failure, parse errors, etc.)
+    log.Fatal(err)
 }
+```
+
+### Decode (Pull Style)
+
+For more control over the parsing process, use `NewReader` with a pull-style API. This gives you explicit control over when to read the next statement:
+
+```go
+import (
+    "io"
+    "github.com/geoknoesis/rdf-go"
+)
+
+// Create a reader for Turtle format
+// You can also use rdf.FormatAuto to auto-detect the format
+dec, err := rdf.NewReader(reader, rdf.FormatTurtle)
+if err != nil {
+    // Handle initialization errors (unsupported format, etc.)
+    log.Fatal(err)
+}
+// Always close the reader to release resources
 defer dec.Close()
 
+// Pull-style: explicitly request the next statement
 for {
-    triple, err := dec.Next()
+    stmt, err := dec.Next()
     if err == io.EOF {
+        // End of input reached - normal termination
         break
     }
     if err != nil {
-        // handle error
+        // Handle parsing errors
+        log.Printf("Parse error: %v", err)
+        return err
     }
-    // use triple.S / triple.P / triple.O
+    
+    // Process the statement
+    // Use stmt.IsTriple() to check if it's a triple (G is nil)
+    // Use stmt.IsQuad() to check if it's a quad (G is non-nil)
+    if stmt.IsTriple() {
+        fmt.Printf("Triple: %s %s %s\n", 
+            stmt.S.String(), stmt.P.String(), stmt.O.String())
+    } else {
+        fmt.Printf("Quad: %s %s %s (graph: %s)\n",
+            stmt.S.String(), stmt.P.String(), stmt.O.String(), stmt.G.String())
+    }
 }
 ```
 
-### Decode Quads (pull)
+### Read All (Convenience)
+
+For small datasets that fit in memory, `ReadAll` provides a simple way to load all statements at once. **Note:** This loads everything into memory, so use `Parse` or `NewReader` for large files:
 
 ```go
-input := `<http://example.org/s> <http://example.org/p> "v" <http://example.org/g> .`
-dec, err := rdf.NewQuadDecoder(strings.NewReader(input), rdf.QuadFormatNQuads)
+import (
+    "context"
+    "github.com/geoknoesis/rdf-go"
+)
+
+// ReadAll loads all statements from the reader into a slice
+// FormatAuto enables automatic format detection
+stmts, err := rdf.ReadAll(context.Background(), reader, rdf.FormatAuto)
 if err != nil {
-    // handle error
+    // Handle errors (format detection failure, parse errors, etc.)
+    log.Fatal(err)
 }
-defer dec.Close()
 
-for {
-    quad, err := dec.Next()
-    if err == io.EOF {
-        break
-    }
-    if err != nil {
-        // handle error
-    }
-    // use quad.S / quad.P / quad.O / quad.G
+// Now you can process all statements
+fmt.Printf("Loaded %d statements\n", len(stmts))
+for i, stmt := range stmts {
+    fmt.Printf("Statement %d: %s %s %s\n", 
+        i+1, stmt.S.String(), stmt.P.String(), stmt.O.String())
 }
 ```
 
-### Encode Triples (push)
+### Encode (Push Style)
+
+To write RDF data, use `NewWriter` with a push-style API. You explicitly write each statement:
 
 ```go
+import (
+    "bytes"
+    "github.com/geoknoesis/rdf-go"
+)
+
+// Create a buffer to hold the encoded output
 buf := &bytes.Buffer{}
-enc, err := rdf.NewTripleEncoder(buf, rdf.TripleFormatNTriples)
+
+// Create an writer for Turtle format
+enc, err := rdf.NewWriter(buf, rdf.FormatTurtle)
 if err != nil {
-    // handle error
+    // Handle initialization errors
+    log.Fatal(err)
 }
+// Always close the writer to flush any remaining data
 defer enc.Close()
 
-_ = enc.Write(rdf.Triple{
-    S: rdf.IRI{Value: "http://example.org/s"},
-    P: rdf.IRI{Value: "http://example.org/p"},
-    O: rdf.Literal{Lexical: "v"},
-})
-_ = enc.Flush()
+// Create a statement (triple) - there are two ways:
+
+// Option 1: Omit G field (defaults to nil for triples) - more readable!
+stmt := rdf.Statement{
+    S: rdf.IRI{Value: "http://example.org/s"},  // Subject: the resource
+    P: rdf.IRI{Value: "http://example.org/p"},  // Predicate: the property
+    O: rdf.IRI{Value: "http://example.org/o"}, // Object: the value
+    // G is omitted and defaults to nil (this is a triple, not a quad)
+}
+
+// Option 2: Use the convenience function
+stmt := rdf.NewTriple(
+    rdf.IRI{Value: "http://example.org/s"},
+    rdf.IRI{Value: "http://example.org/p"},
+    rdf.IRI{Value: "http://example.org/o"},
+)
+
+// Write the statement to the writer
+if err := enc.Write(stmt); err != nil {
+    // Handle write errors
+    log.Fatal(err)
+}
+
+// Flush any buffered data (important for some formats)
+if err := enc.Flush(); err != nil {
+    log.Fatal(err)
+}
+
+// The encoded RDF is now in buf
+fmt.Print(buf.String())
+// Output: <http://example.org/s> <http://example.org/p> <http://example.org/o> .
 ```
 
-### Encode Quads (push)
+### Write All (Convenience)
+
+For writing multiple statements at once, `WriteAll` provides a convenient helper:
 
 ```go
-buf := &bytes.Buffer{}
-enc, err := rdf.NewQuadEncoder(buf, rdf.QuadFormatNQuads)
+import (
+    "context"
+    "os"
+    "github.com/geoknoesis/rdf-go"
+)
+
+// Prepare a slice of statements to write
+stmts := []rdf.Statement{
+    // Create triples - G can be omitted (defaults to nil)
+    rdf.Statement{
+        S: rdf.IRI{Value: "http://example.org/s1"},
+        P: rdf.IRI{Value: "http://example.org/p1"},
+        O: rdf.IRI{Value: "http://example.org/o1"},
+    },
+    // Or use the convenience function
+    rdf.NewTriple(
+        rdf.IRI{Value: "http://example.org/s2"},
+        rdf.IRI{Value: "http://example.org/p2"},
+        rdf.IRI{Value: "http://example.org/o2"},
+    ),
+}
+
+// Write all statements to a file
+file, _ := os.Create("output.ttl")
+defer file.Close()
+
+err := rdf.WriteAll(context.Background(), file, rdf.FormatTurtle, stmts)
 if err != nil {
-    // handle error
-}
-defer enc.Close()
-
-_ = enc.Write(rdf.Quad{
-    S: rdf.IRI{Value: "http://example.org/s"},
-    P: rdf.IRI{Value: "http://example.org/p"},
-    O: rdf.Literal{Lexical: "v"},
-    G: rdf.IRI{Value: "http://example.org/g"},
-})
-_ = enc.Flush()
-```
-
-### Format Detection
-
-Automatically detect RDF format from input:
-
-```go
-// Detect triple format
-format, ok := rdf.DetectFormat(reader)
-if ok {
-    dec, err := rdf.NewTripleDecoder(reader, format)
-    // ...
-}
-
-// Detect quad format
-quadFormat, ok := rdf.DetectQuadFormat(reader)
-if ok {
-    dec, err := rdf.NewQuadDecoder(reader, quadFormat)
-    // ...
-}
-
-// Auto-detect (tries quad formats first, then triple formats)
-formatStr, ok := rdf.DetectFormatAuto(reader)
-if ok {
-    // formatStr will be "turtle", "ntriples", "trig", "nquads", etc.
-}
-```
-
-**Note**: Format detection reads from the reader, so the reader position will be advanced. If you need to preserve the reader position, use `io.TeeReader` or buffer the input.
-
-### Parse Triples (handler)
-
-```go
-count := 0
-err := rdf.ParseTriples(context.Background(), strings.NewReader(input), rdf.TripleFormatNTriples,
-    rdf.TripleHandlerFunc(func(t rdf.Triple) error {
-        count++
-        return nil
-    }),
-)
-```
-
-### ParseQuads (handler)
-
-```go
-count := 0
-err := rdf.ParseQuads(context.Background(), strings.NewReader(input), rdf.QuadFormatNQuads,
-    rdf.QuadHandlerFunc(func(q rdf.Quad) error {
-        count++
-        return nil
-    }),
-)
-```
-
-### ParseTriplesChan (channel)
-
-```go
-out, errs := rdf.ParseTriplesChan(context.Background(), strings.NewReader(input), rdf.TripleFormatNTriples)
-for t := range out {
-    _ = t
-}
-if err, ok := <-errs; ok && err != nil {
-    // handle error
+    // Handle write errors
+    log.Fatal(err)
 }
 ```
 
 ## RDF-star
 
-Quoted triples are represented by `TripleTerm` and can be nested:
+RDF-star allows you to make statements about statements using quoted triples. The library represents quoted triples using `TripleTerm`:
 
 ```go
+// Create a quoted triple - this represents a statement that can be used as a subject or object
 quoted := rdf.TripleTerm{
-    S: rdf.IRI{Value: "http://example.org/s"},
-    P: rdf.IRI{Value: "http://example.org/p"},
-    O: rdf.IRI{Value: "http://example.org/o"},
+    S: rdf.IRI{Value: "http://example.org/alice"},  // Subject of the quoted triple
+    P: rdf.IRI{Value: "http://example.org/said"},  // Predicate of the quoted triple
+    O: rdf.Literal{Lexical: "Hello"},                // Object of the quoted triple
 }
-stmt := rdf.Triple{
-    S: quoted,
-    P: rdf.IRI{Value: "http://example.org/said"},
-    O: rdf.Literal{Lexical: "true"},
+
+// Use the quoted triple as a subject in a new statement
+// This says: "The statement 'Alice said Hello' is asserted to be true"
+stmt := rdf.Statement{
+    S: quoted,  // Subject is the quoted triple (RDF-star feature)
+    P: rdf.IRI{Value: "http://example.org/asserted"}, // Predicate: "is asserted"
+    O: rdf.Literal{Lexical: "true"},                 // Object: true
+    // G omitted - defaults to nil (this is a triple, not a quad)
+}
+
+// You can encode this to Turtle format, which supports RDF-star
+enc, _ := rdf.NewWriter(&buf, rdf.FormatTurtle)
+enc.Write(stmt)
+// Output: <<http://example.org/alice http://example.org/said "Hello">> 
+//          <http://example.org/asserted> "true" .
+```
+
+
+
+## Error Handling
+
+The library follows Go's standard error handling patterns. Always check for `io.EOF` to detect end of input:
+
+```go
+import (
+    "errors"
+    "io"
+    "github.com/geoknoesis/rdf-go"
+)
+
+dec, err := rdf.NewReader(reader, rdf.FormatTurtle)
+if err != nil {
+    // Handle initialization errors (unsupported format, etc.)
+    return err
+}
+defer dec.Close()
+
+for {
+    stmt, err := dec.Next()
+    if err == io.EOF {
+        // End of input reached - this is normal, not an error
+        break
+    }
+    if err != nil {
+        // Check if it's a parse error with position information
+        var parseErr *rdf.ParseError
+        if errors.As(err, &parseErr) {
+            // ParseError includes detailed position information
+            fmt.Printf("Parse error at line %d, column %d: %v\n", 
+                parseErr.Line, parseErr.Column, parseErr.Err)
+            // The error message also includes input excerpts with caret indicators
+        } else {
+            // Other errors (I/O errors, context cancellation, etc.)
+            fmt.Printf("Error: %v\n", err)
+        }
+        return err
+    }
+    
+    // Successfully read a statement - process it
+    // Use stmt.IsTriple() or stmt.IsQuad() to check the statement type
+    processStatement(stmt)
 }
 ```
+
+Error messages automatically include:
+- Position information (line:column or offset)
+- Input excerpts showing context around the error
+- Caret indicators pointing to the error position
 
 ## Format Selection
 
-The library provides separate format types for triple-only and quad formats:
+The library uses a unified `Format` type for all RDF serialization formats. You can either use format constants or parse format strings:
 
 ```go
-// For triple formats (Turtle, N-Triples, RDF/XML, JSON-LD)
-format, ok := rdf.ParseTripleFormat("nt")
+// Option 1: Parse format from a string (useful for user input or file extensions)
+format, ok := rdf.ParseFormat("ttl")  // Returns FormatTurtle
 if !ok {
-    // fallback
+    // Format string not recognized
+    return fmt.Errorf("unknown format: %s", "ttl")
 }
 
-// For quad formats (TriG, N-Quads)
-format, ok := rdf.ParseQuadFormat("nq")
-if !ok {
-    // fallback
+// Option 2: Use format constants directly (recommended for known formats)
+dec, err := rdf.NewReader(reader, rdf.FormatTurtle)
+
+// Option 3: Use auto-detection (library detects format from input)
+dec, err := rdf.NewReader(reader, rdf.FormatAuto)
+```
+
+### Supported Formats
+
+**Triple formats:**
+- `rdf.FormatTurtle` - Turtle (.ttl)
+- `rdf.FormatNTriples` - N-Triples (.nt)
+- `rdf.FormatRDFXML` - RDF/XML (.rdf, .xml)
+- `rdf.FormatJSONLD` - JSON-LD (.jsonld)
+
+**Quad formats:**
+- `rdf.FormatTriG` - TriG (.trig)
+- `rdf.FormatNQuads` - N-Quads (.nq)
+
+**Auto-detection:**
+- `rdf.FormatAuto` - Automatically detect format from input
+
+## Options
+
+Configure reader/writer behavior using functional options. Options are applied in order and can be combined:
+
+```go
+import (
+    "context"
+    "time"
+    "github.com/geoknoesis/rdf-go"
+)
+
+// Create a context with timeout for cancellation
+ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+defer cancel()
+
+// Configure reader with multiple options
+dec, err := rdf.NewReader(reader, rdf.FormatTurtle,
+    // Security: Apply safe limits for untrusted input
+    // This sets reasonable defaults to prevent resource exhaustion attacks
+    rdf.OptSafeLimits(),
+    
+    // Limit nesting depth (for collections, blank node lists, etc.)
+    rdf.OptMaxDepth(50),
+    
+    // Set context for cancellation and timeouts
+    rdf.OptContext(ctx),
+    
+    // Limit maximum line size (64KB)
+    rdf.OptMaxLineBytes(64<<10),
+    
+    // Limit maximum statement size (256KB)
+    rdf.OptMaxStatementBytes(256<<10),
+    
+    // Limit total number of statements to process
+    rdf.OptMaxTriples(1_000_000),
+)
+if err != nil {
+    return err
 }
 ```
 
-## Supported Formats
-
-**Triple formats:**
-- `rdf.TripleFormatTurtle` - Turtle (.ttl)
-- `rdf.TripleFormatNTriples` - N-Triples (.nt)
-- `rdf.TripleFormatRDFXML` - RDF/XML (.rdf, .xml)
-- `rdf.TripleFormatJSONLD` - JSON-LD (.jsonld)
-
-**Quad formats:**
-- `rdf.QuadFormatTriG` - TriG (.trig)
-- `rdf.QuadFormatNQuads` - N-Quads (.nq)
+Available options:
+- `OptContext(ctx)` - Set context for cancellation and timeouts
+- `OptMaxLineBytes(n)` - Set maximum line size limit
+- `OptMaxStatementBytes(n)` - Set maximum statement size limit
+- `OptMaxDepth(n)` - Set maximum nesting depth limit
+- `OptMaxTriples(n)` - Set maximum number of triples/quads to process
+- `OptSafeLimits()` - Apply safe limits suitable for untrusted input
 
 ## Notes
 
 - The API is intentionally small and favors streaming. For large inputs,
-  prefer `NewTripleDecoder`/`NewQuadDecoder` or `ParseTriples`/`ParseQuads` instead of buffering all results.
-- The API enforces type safety: triple formats can only be used with triple decoders/encoders,
-  and quad formats can only be used with quad decoders/encoders.
-- For any format that is not supported, `NewTripleDecoder`/`NewQuadDecoder`/`NewTripleEncoder`/`NewQuadEncoder` returns
-  `rdf.ErrUnsupportedFormat`.
+  prefer `NewReader` or `Parse` instead of `ReadAll`.
+- All formats work with the unified `Reader` and `Writer` interfaces.
+- The `Statement` type represents either a triple (G is nil) or a quad (G is non-nil).
+- Use `stmt.IsTriple()` or `stmt.IsQuad()` to check the statement type.
+- For any unsupported format, `NewReader`/`NewWriter` returns `rdf.ErrUnsupportedFormat`.
 - RDF/XML container elements (rdf:Bag, rdf:Seq, rdf:Alt, rdf:List) are parsed as node elements;
   container membership expansion is not implemented.
 
@@ -237,26 +409,25 @@ if !ok {
 **Always set explicit security limits** when processing untrusted input to prevent resource exhaustion attacks.
 
 ```go
-// Use SafeDecodeOptions for untrusted input
-opts := rdf.SafeDecodeOptions()
-dec, err := rdf.NewTripleDecoderWithOptions(r, rdf.TripleFormatTurtle, opts)
+// Use OptSafeLimits for untrusted input
+dec, err := rdf.NewReader(r, rdf.FormatTurtle, rdf.OptSafeLimits())
 ```
 
 Or set custom limits:
 
 ```go
-dec, err := rdf.NewTripleDecoderWithOptions(r, rdf.TripleFormatTurtle, rdf.DecodeOptions{
-    MaxLineBytes:      64 << 10,  // 64KB per line
-    MaxStatementBytes: 256 << 10, // 256KB per statement
-    MaxDepth:          50,         // 50 levels of nesting
-    MaxTriples:        1_000_000,  // 1M triples max
-    Context:           ctx,        // For cancellation/timeouts
-})
+dec, err := rdf.NewReader(r, rdf.FormatTurtle,
+    rdf.OptMaxLineBytes(64<<10),      // 64KB per line
+    rdf.OptMaxStatementBytes(256<<10), // 256KB per statement
+    rdf.OptMaxDepth(50),              // 50 levels of nesting
+    rdf.OptMaxTriples(1_000_000),      // 1M triples max
+    rdf.OptContext(ctx),               // For cancellation/timeouts
+)
 ```
 
 ### Security Limits
 
-The following limits are available in `DecodeOptions`:
+The following limits are available via options:
 
 - **MaxLineBytes**: Maximum size of a single line (default: 1MB)
 - **MaxStatementBytes**: Maximum size of a complete statement (default: 4MB)
@@ -271,7 +442,7 @@ The following limits are available in `DecodeOptions`:
 Errors include line and column information, along with input excerpts for better debugging:
 
 ```go
-triple, err := dec.Next()
+stmt, err := dec.Next()
 if err != nil {
     var parseErr *rdf.ParseError
     if errors.As(err, &parseErr) {
@@ -291,25 +462,26 @@ Error messages automatically include:
 - Input excerpts showing context around the error
 - Caret indicators pointing to the error position
 
-### JSON-LD Limits
+### JSON-LD Options
 
-JSON-LD decoding supports additional semantic limits:
+JSON-LD decoding supports additional semantic limits via `JSONLDOptions`:
 
 ```go
-opts := rdf.JSONLDOptions{
+jsonldOpts := rdf.JSONLDOptions{
     Context:       ctx,
     MaxInputBytes: 1 << 20,
     MaxNodes:      10000,
     MaxGraphItems: 10000,
     MaxQuads:      20000,
 }
-dec := rdf.NewJSONLDTripleDecoder(r, opts)
+// JSON-LD options are used internally when FormatJSONLD is specified
+dec, err := rdf.NewReader(r, rdf.FormatJSONLD)
 ```
 
-**Note**: JSON-LD supports streaming parsing using `json.Decoder` token-by-token processing. The decoder processes nodes incrementally and emits triples/quads as they are parsed. However, there are some limitations:
+**Note**: JSON-LD supports streaming parsing using `json.Reader` token-by-token processing. The reader processes nodes incrementally and emits triples/quads as they are parsed. However, there are some limitations:
 - When `@graph` appears before `@context` in the JSON structure, the graph items must be buffered until the context is available (this is necessary for correct term expansion)
 - Nested objects and arrays are fully decoded into memory (this is required for JSON-LD context processing and term expansion)
-- **Remote context resolution**: The streaming decoder supports remote context URLs when a `DocumentLoader` is provided in `JSONLDOptions`. If `@context` is a string URL, it will be loaded via the `DocumentLoader` before processing.
+- **Remote context resolution**: The streaming reader supports remote context URLs when a `DocumentLoader` is provided in `JSONLDOptions`. If `@context` is a string URL, it will be loaded via the `DocumentLoader` before processing.
 - For very large documents with `@graph` before `@context`, consider reordering the JSON structure to place `@context` first, or use other RDF formats (Turtle, N-Triples, TriG, N-Quads) which have more efficient streaming characteristics
 
 ---

@@ -107,6 +107,11 @@ type Triple struct {
 
 `Triple` represents an RDF triple (subject, predicate, object).
 
+**Methods:**
+- `ToStatement() Statement` - Converts triple to a statement
+- `ToQuad() Quad` - Converts triple to a quad in the default graph
+- `ToQuadInGraph(graph Term) Quad` - Converts triple to a quad in a named graph
+
 ### Quad
 
 ```go
@@ -122,354 +127,266 @@ type Quad struct {
 
 **Methods:**
 - `IsZero() bool` - Reports whether the quad has no subject/predicate/object
+- `ToTriple() Triple` - Extracts the triple from a quad (ignores graph)
+- `InDefaultGraph() bool` - Reports whether the quad is in the default graph
+- `ToStatement() Statement` - Converts quad to a statement
 
-### TripleFormat
+### Statement
 
 ```go
-type TripleFormat string
+type Statement struct {
+    S Term
+    P IRI
+    O Term
+    G Term  // nil for triples, non-nil for quads (can be omitted, defaults to nil)
+}
+```
 
-const (
-    TripleFormatTurtle   TripleFormat = "turtle"
-    TripleFormatNTriples TripleFormat = "ntriples"
-    TripleFormatRDFXML   TripleFormat = "rdfxml"
-    TripleFormatJSONLD   TripleFormat = "jsonld"
+`Statement` represents an RDF statement, which can be either a triple or a quad.
+If `G` is `nil` (or omitted), it represents a triple. If `G` is non-nil, it represents a quad.
+
+**Creating Statements:**
+
+```go
+// Option 1: Omit G (defaults to nil for triples)
+stmt := rdf.Statement{
+    S: rdf.IRI{Value: "http://example.org/s"},
+    P: rdf.IRI{Value: "http://example.org/p"},
+    O: rdf.IRI{Value: "http://example.org/o"},
+    // G omitted - defaults to nil (triple)
+}
+
+// Option 2: Use convenience function
+stmt := rdf.NewTriple(
+    rdf.IRI{Value: "http://example.org/s"},
+    rdf.IRI{Value: "http://example.org/p"},
+    rdf.IRI{Value: "http://example.org/o"},
+)
+
+// For quads, specify G
+quad := rdf.Statement{
+    S: rdf.IRI{Value: "http://example.org/s"},
+    P: rdf.IRI{Value: "http://example.org/p"},
+    O: rdf.IRI{Value: "http://example.org/o"},
+    G: rdf.IRI{Value: "http://example.org/g"},
+}
+
+// Or use convenience function
+quad := rdf.NewQuad(
+    rdf.IRI{Value: "http://example.org/s"},
+    rdf.IRI{Value: "http://example.org/p"},
+    rdf.IRI{Value: "http://example.org/o"},
+    rdf.IRI{Value: "http://example.org/g"},
 )
 ```
 
-`TripleFormat` identifies RDF serialization formats that only support triples.
+**Methods:**
+- `IsTriple() bool` - Reports whether the statement is a triple (G is nil)
+- `IsQuad() bool` - Reports whether the statement is a quad (G is non-nil)
+- `AsTriple() Triple` - Returns the statement as a triple (ignores graph)
+- `AsQuad() Quad` - Returns the statement as a quad
 
-### QuadFormat
+### Format
 
 ```go
-type QuadFormat string
+type Format string
 
 const (
-    QuadFormatTriG   QuadFormat = "trig"
-    QuadFormatNQuads QuadFormat = "nquads"
+    FormatAuto Format = ""
+    
+    // Triple formats
+    FormatTurtle   Format = "turtle"
+    FormatNTriples Format = "ntriples"
+    FormatRDFXML   Format = "rdfxml"
+    FormatJSONLD   Format = "jsonld"
+    
+    // Quad formats
+    FormatTriG   Format = "trig"
+    FormatNQuads Format = "nquads"
 )
 ```
 
-`QuadFormat` identifies RDF serialization formats that support quads (named graphs).
+`Format` represents an RDF serialization format.
+
+**Methods:**
+- `ParseFormat(s string) (Format, bool)` - Parses a format string
+- `IsQuadFormat() bool` - Reports whether the format supports quads
+- `String() string` - Returns the canonical format name
 
 ## Interfaces
 
-### TripleDecoder
+### Reader
 
 ```go
-type TripleDecoder interface {
-    Next() (Triple, error)
-    Err() error
+type Reader interface {
+    Next() (Statement, error)
     Close() error
 }
 ```
 
-`TripleDecoder` streams RDF triples from an input.
+`Reader` streams RDF statements from an input. A statement can be either a triple (G is nil) or a quad (G is non-nil).
 
 **Methods:**
-- `Next() (Triple, error)` - Returns the next triple, or `io.EOF` when done
-- `Err() error` - Returns any error that occurred during decoding
-- `Close() error` - Closes the decoder and releases resources
+- `Next() (Statement, error)` - Returns the next statement, or `io.EOF` when done
+- `Close() error` - Closes the reader and releases resources
 
-### QuadDecoder
-
-```go
-type QuadDecoder interface {
-    Next() (Quad, error)
-    Err() error
-    Close() error
-}
-```
-
-`QuadDecoder` streams RDF quads from an input.
-
-**Methods:**
-- `Next() (Quad, error)` - Returns the next quad, or `io.EOF` when done
-- `Err() error` - Returns any error that occurred during decoding
-- `Close() error` - Closes the decoder and releases resources
-
-### TripleEncoder
+### Writer
 
 ```go
-type TripleEncoder interface {
-    Write(Triple) error
+type Writer interface {
+    Write(Statement) error
     Flush() error
     Close() error
 }
 ```
 
-`TripleEncoder` streams RDF triples to an output.
+`Writer` streams RDF statements to an output. For triple-only formats, the graph (G) field is ignored.
 
 **Methods:**
-- `Write(Triple) error` - Writes a triple to the output
+- `Write(Statement) error` - Writes a statement to the output
 - `Flush() error` - Flushes any buffered data
-- `Close() error` - Closes the encoder and releases resources
+- `Close() error` - Closes the writer and releases resources
 
-### QuadEncoder
-
-```go
-type QuadEncoder interface {
-    Write(Quad) error
-    Flush() error
-    Close() error
-}
-```
-
-`QuadEncoder` streams RDF quads to an output.
-
-**Methods:**
-- `Write(Quad) error` - Writes a quad to the output
-- `Flush() error` - Flushes any buffered data
-- `Close() error` - Closes the encoder and releases resources
-
-### TripleHandler
+### Handler
 
 ```go
-type TripleHandler interface {
-    Handle(Triple) error
-}
+type Handler func(Statement) error
 ```
 
-`TripleHandler` processes triples in push mode.
-
-### TripleHandlerFunc
-
-```go
-type TripleHandlerFunc func(Triple) error
-
-func (h TripleHandlerFunc) Handle(t Triple) error
-```
-
-`TripleHandlerFunc` adapts a function to a `TripleHandler`.
-
-### QuadHandler
-
-```go
-type QuadHandler interface {
-    Handle(Quad) error
-}
-```
-
-`QuadHandler` processes quads in push mode.
-
-### QuadHandlerFunc
-
-```go
-type QuadHandlerFunc func(Quad) error
-
-func (h QuadHandlerFunc) Handle(q Quad) error
-```
-
-`QuadHandlerFunc` adapts a function to a `QuadHandler`.
+`Handler` processes statements in push mode. It's a function type that can be passed to `Parse`.
 
 ## Functions
 
-### NewTripleDecoder
+### NewReader
 
 ```go
-func NewTripleDecoder(r io.Reader, format TripleFormat) (TripleDecoder, error)
+func NewReader(r io.Reader, format Format, opts ...Option) (Reader, error)
 ```
 
-`NewTripleDecoder` creates a decoder for the given triple format.
+`NewReader` creates a reader for the specified format. If format is `FormatAuto` (empty string), the format is automatically detected. Auto-detection reads from the reader, so the reader position will be advanced.
 
 **Parameters:**
 - `r` - Input reader
-- `format` - Triple format to decode
+- `format` - Format to read (use `FormatAuto` for auto-detection)
+- `opts` - Optional configuration options
 
 **Returns:**
-- `TripleDecoder` - The decoder instance
+- `Reader` - The reader instance
 - `error` - Error if format is unsupported or initialization fails
 
 **Example:**
 ```go
-dec, err := rdf.NewTripleDecoder(reader, rdf.TripleFormatTurtle)
+reader, err := rdf.NewReader(reader, rdf.FormatTurtle)
 ```
 
-### NewQuadDecoder
+### NewWriter
 
 ```go
-func NewQuadDecoder(r io.Reader, format QuadFormat) (QuadDecoder, error)
+func NewWriter(w io.Writer, format Format, opts ...Option) (Writer, error)
 ```
 
-`NewQuadDecoder` creates a decoder for the given quad format.
-
-**Parameters:**
-- `r` - Input reader
-- `format` - Quad format to decode
-
-**Returns:**
-- `QuadDecoder` - The decoder instance
-- `error` - Error if format is unsupported or initialization fails
-
-**Example:**
-```go
-dec, err := rdf.NewQuadDecoder(reader, rdf.QuadFormatTriG)
-```
-
-### NewTripleEncoder
-
-```go
-func NewTripleEncoder(w io.Writer, format TripleFormat) (TripleEncoder, error)
-```
-
-`NewTripleEncoder` creates an encoder for the given triple format.
+`NewWriter` creates a writer for the specified format.
 
 **Parameters:**
 - `w` - Output writer
-- `format` - Triple format to encode
+- `format` - Format to write
+- `opts` - Optional configuration options
 
 **Returns:**
-- `TripleEncoder` - The encoder instance
+- `Writer` - The writer instance
 - `error` - Error if format is unsupported or initialization fails
 
 **Example:**
 ```go
-enc, err := rdf.NewTripleEncoder(writer, rdf.TripleFormatNTriples)
+writer, err := rdf.NewWriter(writer, rdf.FormatNTriples)
 ```
 
-### NewQuadEncoder
+### Parse
 
 ```go
-func NewQuadEncoder(w io.Writer, format QuadFormat) (QuadEncoder, error)
+func Parse(ctx context.Context, r io.Reader, format Format, handler Handler, opts ...Option) error
 ```
 
-`NewQuadEncoder` creates an encoder for the given quad format.
-
-**Parameters:**
-- `w` - Output writer
-- `format` - Quad format to encode
-
-**Returns:**
-- `QuadEncoder` - The encoder instance
-- `error` - Error if format is unsupported or initialization fails
-
-**Example:**
-```go
-enc, err := rdf.NewQuadEncoder(writer, rdf.QuadFormatNQuads)
-```
-
-### ParseTriples
-
-```go
-func ParseTriples(ctx context.Context, r io.Reader, format TripleFormat, handler TripleHandler) error
-```
-
-`ParseTriples` streams RDF triples to a handler function.
+`Parse` parses RDF from the reader and streams statements to the handler. If format is `FormatAuto` (empty string), the format is automatically detected.
 
 **Parameters:**
 - `ctx` - Context for cancellation
 - `r` - Input reader
-- `format` - Triple format
-- `handler` - Handler to process triples
+- `format` - Format to parse (use `FormatAuto` for auto-detection)
+- `handler` - Handler function to process statements
+- `opts` - Optional configuration options
 
 **Returns:**
 - `error` - Error if parsing fails
 
 **Example:**
 ```go
-err := rdf.ParseTriples(ctx, reader, rdf.TripleFormatTurtle,
-    rdf.TripleHandlerFunc(func(t rdf.Triple) error {
-        // process triple
-        return nil
-    }),
-)
+err := rdf.Parse(context.Background(), reader, rdf.FormatTurtle, func(s rdf.Statement) error {
+    // process statement
+    return nil
+})
 ```
 
-### ParseQuads
+### ReadAll
 
 ```go
-func ParseQuads(ctx context.Context, r io.Reader, format QuadFormat, handler QuadHandler) error
+func ReadAll(ctx context.Context, r io.Reader, format Format, opts ...Option) ([]Statement, error)
 ```
 
-`ParseQuads` streams RDF quads to a handler function.
+`ReadAll` reads all statements from the reader into memory. This is a convenience function for small datasets. For large inputs, use `Parse` or `NewReader` for streaming.
 
 **Parameters:**
 - `ctx` - Context for cancellation
 - `r` - Input reader
-- `format` - Quad format
-- `handler` - Handler to process quads
+- `format` - Format to parse (use `FormatAuto` for auto-detection)
+- `opts` - Optional configuration options
 
 **Returns:**
+- `[]Statement` - All statements from the input
 - `error` - Error if parsing fails
 
 **Example:**
 ```go
-err := rdf.ParseQuads(ctx, reader, rdf.QuadFormatTriG,
-    rdf.QuadHandlerFunc(func(q rdf.Quad) error {
-        // process quad
-        return nil
-    }),
-)
+stmts, err := rdf.ReadAll(context.Background(), reader, rdf.FormatAuto)
 ```
 
-### ParseTriplesChan
+### WriteAll
 
 ```go
-func ParseTriplesChan(ctx context.Context, r io.Reader, format TripleFormat) (<-chan Triple, <-chan error)
+func WriteAll(ctx context.Context, w io.Writer, format Format, stmts []Statement, opts ...Option) error
 ```
 
-`ParseTriplesChan` returns a channel of triples and an error channel.
+`WriteAll` writes all statements to the writer.
 
 **Parameters:**
 - `ctx` - Context for cancellation
-- `r` - Input reader
-- `format` - Triple format
+- `w` - Output writer
+- `format` - Format to encode
+- `stmts` - Statements to write
+- `opts` - Optional configuration options
 
 **Returns:**
-- `<-chan Triple` - Channel of triples
-- `<-chan error` - Channel for errors
+- `error` - Error if encoding fails
 
 **Example:**
 ```go
-out, errs := rdf.ParseTriplesChan(ctx, reader, rdf.TripleFormatTurtle)
-for t := range out {
-    // process triple
-}
-if err, ok := <-errs; ok && err != nil {
-    // handle error
-}
+stmts := []rdf.Statement{...}
+err := rdf.WriteAll(context.Background(), writer, rdf.FormatTurtle, stmts)
 ```
 
-### ParseQuadsChan
+### ParseFormat
 
 ```go
-func ParseQuadsChan(ctx context.Context, r io.Reader, format QuadFormat) (<-chan Quad, <-chan error)
+func ParseFormat(s string) (Format, bool)
 ```
 
-`ParseQuadsChan` returns a channel of quads and an error channel.
+`ParseFormat` normalizes a format string and returns a `Format`. Supports common aliases (e.g., "ttl" -> `FormatTurtle`, "nt" -> `FormatNTriples`).
 
 **Parameters:**
-- `ctx` - Context for cancellation
-- `r` - Input reader
-- `format` - Quad format
+- `s` - Format string (e.g., "ttl", "turtle", "nt", "trig", "nq")
 
 **Returns:**
-- `<-chan Quad` - Channel of quads
-- `<-chan error` - Channel for errors
-
-**Example:**
-```go
-out, errs := rdf.ParseQuadsChan(ctx, reader, rdf.QuadFormatTriG)
-for q := range out {
-    // process quad
-}
-if err, ok := <-errs; ok && err != nil {
-    // handle error
-}
-```
-
-### ParseTripleFormat
-
-```go
-func ParseTripleFormat(value string) (TripleFormat, bool)
-```
-
-`ParseTripleFormat` normalizes a format string and returns a `TripleFormat` if valid.
-
-**Parameters:**
-- `value` - Format string (e.g., "ttl", "turtle", "nt")
-
-**Returns:**
-- `TripleFormat` - The format constant
+- `Format` - The format constant
 - `bool` - True if format was recognized
 
 **Supported aliases:**
@@ -477,34 +394,63 @@ func ParseTripleFormat(value string) (TripleFormat, bool)
 - N-Triples: "ntriples", "nt"
 - RDF/XML: "rdfxml", "rdf", "xml"
 - JSON-LD: "jsonld", "json-ld", "json"
-
-**Example:**
-```go
-format, ok := rdf.ParseTripleFormat("ttl")
-```
-
-### ParseQuadFormat
-
-```go
-func ParseQuadFormat(value string) (QuadFormat, bool)
-```
-
-`ParseQuadFormat` normalizes a format string and returns a `QuadFormat` if valid.
-
-**Parameters:**
-- `value` - Format string (e.g., "trig", "nq")
-
-**Returns:**
-- `QuadFormat` - The format constant
-- `bool` - True if format was recognized
-
-**Supported aliases:**
 - TriG: "trig"
 - N-Quads: "nquads", "nq"
+- Auto: "", "auto"
 
 **Example:**
 ```go
-format, ok := rdf.ParseQuadFormat("nq")
+format, ok := rdf.ParseFormat("ttl")
+```
+
+## Options
+
+Options configure reader/writer behavior using functional options.
+
+### Option
+
+```go
+type Option func(*Options)
+```
+
+`Option` is a function that modifies `Options`.
+
+### Options
+
+```go
+type Options struct {
+    Context context.Context
+    
+    // Security limits for untrusted input
+    MaxLineBytes      int
+    MaxStatementBytes int
+    MaxDepth          int
+    MaxTriples        int64
+    
+    // Format-specific options
+    AllowQuotedTripleStatement bool
+    DebugStatements            bool
+}
+```
+
+`Options` configures parser/writer behavior.
+
+### Option Functions
+
+- `OptContext(ctx context.Context) Option` - Set context for cancellation and timeouts
+- `OptMaxLineBytes(maxBytes int) Option` - Set maximum line size limit
+- `OptMaxStatementBytes(maxBytes int) Option` - Set maximum statement size limit
+- `OptMaxDepth(maxDepth int) Option` - Set maximum nesting depth limit
+- `OptMaxTriples(maxTriples int64) Option` - Set maximum number of triples/quads to process
+- `OptSafeLimits() Option` - Apply safe limits suitable for untrusted input
+
+**Example:**
+```go
+reader, err := rdf.NewReader(reader, rdf.FormatTurtle,
+    rdf.OptSafeLimits(),
+    rdf.OptMaxDepth(50),
+    rdf.OptContext(ctx),
+)
 ```
 
 ## Errors
@@ -515,21 +461,41 @@ format, ok := rdf.ParseQuadFormat("nq")
 var ErrUnsupportedFormat = errors.New("unsupported format")
 ```
 
-`ErrUnsupportedFormat` is returned when a format is not supported by `NewTripleDecoder`, `NewQuadDecoder`, `NewTripleEncoder`, or `NewQuadEncoder`.
+`ErrUnsupportedFormat` is returned when a format is not supported by `NewReader` or `NewWriter`.
+
+### ParseError
+
+```go
+type ParseError struct {
+    Format  string
+    Line    int
+    Column  int
+    Offset  int
+    Err     error
+    Message string
+}
+```
+
+`ParseError` represents a parsing error with position information.
+
+**Methods:**
+- `Error() string` - Returns a formatted error message
+- `Unwrap() error` - Returns the underlying error
 
 ## Best Practices
 
-1. **Always close decoders and encoders**: Use `defer dec.Close()` or `defer enc.Close()`
+1. **Always close readers and writers**: Use `defer reader.Close()` or `defer writer.Close()`
 
 2. **Handle EOF properly**: Check for `io.EOF` when `Next()` returns an error
 
-3. **Use streaming for large files**: Prefer `NewTripleDecoder`/`NewQuadDecoder` or `ParseTriples`/`ParseQuads` over loading all data into memory
+3. **Use streaming for large files**: Prefer `NewReader` or `Parse` over `ReadAll` for large inputs
 
-4. **Check format support**: Use `ParseTripleFormat` or `ParseQuadFormat` to validate format strings before creating decoders/encoders
+4. **Check format support**: Use `ParseFormat` to validate format strings before creating readers/writers
 
-5. **Use the correct format type**: Triple formats can only be used with triple decoders/encoders, and quad formats can only be used with quad decoders/encoders
+5. **Use Statement type**: The unified `Statement` type works with all formats. Use `stmt.IsTriple()` or `stmt.IsQuad()` to check the statement type.
 
-6. **Use context for cancellation**: Pass a context to `ParseTriples`, `ParseQuads`, `ParseTriplesChan`, and `ParseQuadsChan` to enable cancellation
+6. **Use context for cancellation**: Pass a context to `Parse` and `ReadAll` to enable cancellation
 
-7. **Flush encoders**: Call `Flush()` before `Close()` to ensure all data is written
+7. **Flush writers**: Call `Flush()` before `Close()` to ensure all data is written
 
+8. **Set security limits**: For untrusted input, always use `OptSafeLimits()` or set explicit limits

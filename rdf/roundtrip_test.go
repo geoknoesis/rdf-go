@@ -14,15 +14,15 @@ func TestRoundTripTriplesIsomorphic(t *testing.T) {
 		{S: IRI{Value: "http://example.org/s2"}, P: IRI{Value: "http://example.org/p3"}, O: Literal{Lexical: "1", Datatype: IRI{Value: "http://www.w3.org/2001/XMLSchema#integer"}}},
 	}
 
-	formats := []TripleFormat{TripleFormatNTriples, TripleFormatTurtle, TripleFormatRDFXML, TripleFormatJSONLD}
+	formats := []Format{FormatNTriples, FormatTurtle, FormatRDFXML, FormatJSONLD}
 	for _, format := range formats {
 		var buf bytes.Buffer
-		enc, err := NewTripleEncoder(&buf, format)
+		enc, err := NewWriter(&buf, format)
 		if err != nil {
 			t.Fatalf("format %s: %v", format, err)
 		}
 		for _, triple := range triples {
-			if err := enc.Write(triple); err != nil {
+			if err := enc.Write(triple.ToStatement()); err != nil {
 				t.Fatalf("format %s: write error %v", format, err)
 			}
 		}
@@ -30,11 +30,11 @@ func TestRoundTripTriplesIsomorphic(t *testing.T) {
 			t.Fatalf("format %s: close error %v", format, err)
 		}
 
-		dec, err := NewTripleDecoder(strings.NewReader(buf.String()), format)
+		dec, err := NewReader(strings.NewReader(buf.String()), format)
 		if err != nil {
 			t.Fatalf("format %s: %v", format, err)
 		}
-		parsed, err := collectTriples(dec)
+		parsed, err := collectStatements(dec)
 		if err != nil {
 			t.Fatalf("format %s: decode error %v", format, err)
 		}
@@ -43,7 +43,7 @@ func TestRoundTripTriplesIsomorphic(t *testing.T) {
 		}
 
 		want := triplesToQuads(triples)
-		got := triplesToQuads(parsed)
+		got := statementsToQuads(parsed)
 		if !isomorphicQuads(want, got) {
 			t.Fatalf("format %s: roundtrip graphs are not isomorphic", format)
 		}
@@ -57,15 +57,15 @@ func TestRoundTripQuadsIsomorphic(t *testing.T) {
 		{S: IRI{Value: "http://example.org/s2"}, P: IRI{Value: "http://example.org/p3"}, O: BlankNode{ID: "b2"}},
 	}
 
-	formats := []QuadFormat{QuadFormatNQuads, QuadFormatTriG}
+	formats := []Format{FormatNQuads, FormatTriG}
 	for _, format := range formats {
 		var buf bytes.Buffer
-		enc, err := NewQuadEncoder(&buf, format)
+		enc, err := NewWriter(&buf, format)
 		if err != nil {
 			t.Fatalf("format %s: %v", format, err)
 		}
 		for _, quad := range quads {
-			if err := enc.Write(quad); err != nil {
+			if err := enc.Write(quad.ToStatement()); err != nil {
 				t.Fatalf("format %s: write error %v", format, err)
 			}
 		}
@@ -73,11 +73,11 @@ func TestRoundTripQuadsIsomorphic(t *testing.T) {
 			t.Fatalf("format %s: close error %v", format, err)
 		}
 
-		dec, err := NewQuadDecoder(strings.NewReader(buf.String()), format)
+		dec, err := NewReader(strings.NewReader(buf.String()), format)
 		if err != nil {
 			t.Fatalf("format %s: %v", format, err)
 		}
-		parsed, err := collectQuads(dec)
+		parsed, err := collectStatements(dec)
 		if err != nil {
 			t.Fatalf("format %s: decode error %v", format, err)
 		}
@@ -85,41 +85,33 @@ func TestRoundTripQuadsIsomorphic(t *testing.T) {
 			t.Fatalf("format %s: decoder close error %v", format, err)
 		}
 
-		if !isomorphicQuads(quads, parsed) {
+		parsedQuads := statementsToQuads(parsed)
+		if !isomorphicQuads(quads, parsedQuads) {
 			t.Fatalf("format %s: roundtrip graphs are not isomorphic", format)
 		}
 	}
 }
 
-func collectTriples(dec TripleDecoder) ([]Triple, error) {
-	var triples []Triple
+func collectStatements(dec Reader) ([]Statement, error) {
+	var stmts []Statement
 	for {
-		triple, err := dec.Next()
+		stmt, err := dec.Next()
 		if err != nil {
 			if err == io.EOF {
-				return triples, nil
+				return stmts, nil
 			}
 			return nil, err
 		}
-		triples = append(triples, triple)
+		stmts = append(stmts, stmt)
 	}
 }
 
-func collectQuads(dec QuadDecoder) ([]Quad, error) {
-	var quads []Quad
-	for {
-		quad, err := dec.Next()
-		if err != nil {
-			if err == io.EOF {
-				return quads, nil
-			}
-			return nil, err
-		}
-		if quad.IsZero() {
-			continue
-		}
-		quads = append(quads, quad)
+func statementsToQuads(stmts []Statement) []Quad {
+	quads := make([]Quad, len(stmts))
+	for i, s := range stmts {
+		quads[i] = s.AsQuad()
 	}
+	return quads
 }
 
 func triplesToQuads(triples []Triple) []Quad {

@@ -24,13 +24,12 @@ type formatConfig struct {
 	dirName    string
 	extensions []string
 	isTriple   bool
-	tripleFmt  TripleFormat
-	quadFmt    QuadFormat
+	format     Format
 }
 
 func TestNTriplesStar_Parse(t *testing.T) {
 	input := "<< <http://example.org/s> <http://example.org/p> <http://example.org/o> >> <http://example.org/p2> \"v\" .\n"
-	dec, err := NewTripleDecoder(strings.NewReader(input), TripleFormatNTriples)
+	dec, err := NewReader(strings.NewReader(input), FormatNTriples)
 	if err != nil {
 		t.Fatalf("decoder error: %v", err)
 	}
@@ -41,22 +40,22 @@ func TestNTriplesStar_Parse(t *testing.T) {
 
 func TestTurtle_ParseBasic(t *testing.T) {
 	input := "@prefix ex: <http://example.org/> .\nex:s ex:p \"v\" .\n"
-	dec, err := NewTripleDecoder(strings.NewReader(input), TripleFormatTurtle)
+	dec, err := NewReader(strings.NewReader(input), FormatTurtle)
 	if err != nil {
 		t.Fatalf("decoder error: %v", err)
 	}
-	triple, err := dec.Next()
+	quad, err := dec.Next()
 	if err != nil {
 		t.Fatalf("next error: %v", err)
 	}
-	if triple.P.Value != "http://example.org/p" {
-		t.Fatalf("unexpected predicate: %s", triple.P.Value)
+	if quad.P.Value != "http://example.org/p" {
+		t.Fatalf("unexpected predicate: %s", quad.P.Value)
 	}
 }
 
 func TestTriG_ParseBasic(t *testing.T) {
 	input := "@prefix ex: <http://example.org/> .\nex:g { ex:s ex:p ex:o . }\n"
-	dec, err := NewQuadDecoder(strings.NewReader(input), QuadFormatTriG)
+	dec, err := NewReader(strings.NewReader(input), FormatTriG)
 	if err != nil {
 		t.Fatalf("decoder error: %v", err)
 	}
@@ -71,31 +70,31 @@ func TestTriG_ParseBasic(t *testing.T) {
 
 func TestJSONLD_ParseBasic(t *testing.T) {
 	input := `{"@context":{"ex":"http://example.org/"},"@id":"ex:s","ex:p":"v"}`
-	dec, err := NewTripleDecoder(strings.NewReader(input), TripleFormatJSONLD)
+	dec, err := NewReader(strings.NewReader(input), FormatJSONLD)
 	if err != nil {
 		t.Fatalf("decoder error: %v", err)
 	}
-	triple, err := dec.Next()
+	quad, err := dec.Next()
 	if err != nil {
 		t.Fatalf("next error: %v", err)
 	}
-	if triple.P.Value != "http://example.org/p" {
-		t.Fatalf("unexpected predicate: %s", triple.P.Value)
+	if quad.P.Value != "http://example.org/p" {
+		t.Fatalf("unexpected predicate: %s", quad.P.Value)
 	}
 }
 
 func TestRDFXML_ParseBasic(t *testing.T) {
 	input := `<?xml version="1.0"?><rdf:RDF xmlns:rdf="` + rdfXMLNS + `"><rdf:Description rdf:about="http://example.org/s"><ex:p xmlns:ex="http://example.org/">v</ex:p></rdf:Description></rdf:RDF>`
-	dec, err := NewTripleDecoder(strings.NewReader(input), TripleFormatRDFXML)
+	dec, err := NewReader(strings.NewReader(input), FormatRDFXML)
 	if err != nil {
 		t.Fatalf("decoder error: %v", err)
 	}
-	triple, err := dec.Next()
+	quad, err := dec.Next()
 	if err != nil {
 		t.Fatalf("next error: %v", err)
 	}
-	if triple.P.Value != "http://example.org/p" {
-		t.Fatalf("unexpected predicate: %s", triple.P.Value)
+	if quad.P.Value != "http://example.org/p" {
+		t.Fatalf("unexpected predicate: %s", quad.P.Value)
 	}
 }
 
@@ -118,12 +117,12 @@ func TestW3CConformance(t *testing.T) {
 
 	// Define format configurations
 	formatConfigs := []formatConfig{
-		{"turtle", "turtle", []string{".ttl"}, true, TripleFormatTurtle, ""},
-		{"ntriples", "ntriples", []string{".nt"}, true, TripleFormatNTriples, ""},
-		{"trig", "trig", []string{".trig"}, false, "", QuadFormatTriG},
-		{"nquads", "nquads", []string{".nq"}, false, "", QuadFormatNQuads},
-		{"rdfxml", "rdfxml", []string{".rdf", ".xml"}, true, TripleFormatRDFXML, ""},
-		{"jsonld", "jsonld", []string{".jsonld", ".json"}, true, TripleFormatJSONLD, ""},
+		{"turtle", "turtle", []string{".ttl"}, true, FormatTurtle},
+		{"ntriples", "ntriples", []string{".nt"}, true, FormatNTriples},
+		{"trig", "trig", []string{".trig"}, false, FormatTriG},
+		{"nquads", "nquads", []string{".nq"}, false, FormatNQuads},
+		{"rdfxml", "rdfxml", []string{".rdf", ".xml"}, true, FormatRDFXML},
+		{"jsonld", "jsonld", []string{".jsonld", ".json"}, true, FormatJSONLD},
 	}
 
 	for _, cfg := range formatConfigs {
@@ -193,14 +192,8 @@ func runManifestTests(t *testing.T, testDir string, testCases []w3cTestCase, cfg
 				t.Fatalf("Failed to read test file: %v", err)
 			}
 
-			var parseErr error
-			if cfg.isTriple {
-				parseErr = ParseTriples(context.Background(), strings.NewReader(string(data)),
-					cfg.tripleFmt, TripleHandlerFunc(func(Triple) error { return nil }))
-			} else {
-				parseErr = ParseQuads(context.Background(), strings.NewReader(string(data)),
-					cfg.quadFmt, QuadHandlerFunc(func(Quad) error { return nil }))
-			}
+			parseErr := Parse(context.Background(), strings.NewReader(string(data)),
+				cfg.format, func(Statement) error { return nil })
 
 			if tc.testType == "positive" {
 				if parseErr != nil {
@@ -296,15 +289,15 @@ func collectTurtleManifest(manifestPath string, seen map[string]struct{}, testCa
 		return err
 	}
 	content := string(data)
-	var triples []Triple
-	if err := ParseTriples(context.Background(), strings.NewReader(content), TripleFormatTurtle,
-		TripleHandlerFunc(func(t Triple) error {
-			triples = append(triples, t)
+	var quads []Quad
+	if err := Parse(context.Background(), strings.NewReader(content), FormatTurtle,
+		func(s Statement) error {
+			quads = append(quads, s.AsQuad())
 			return nil
-		})); err != nil {
+		}); err != nil {
 		return err
 	}
-	bySubject := groupTriplesBySubject(triples)
+	bySubject := groupTriplesBySubject(quads)
 	baseDir := filepath.Dir(manifestPath)
 
 	if os.Getenv("W3C_MANIFEST_DEBUG") != "" {
@@ -312,22 +305,22 @@ func collectTurtleManifest(manifestPath string, seen map[string]struct{}, testCa
 		includeCount := 0
 		firstCount := 0
 		restCount := 0
-		for _, t := range triples {
-			if t.P.Value == mfEntries {
+		for _, q := range quads {
+			if q.P.Value == mfEntries {
 				entryCount++
 			}
-			if t.P.Value == mfInclude {
+			if q.P.Value == mfInclude {
 				includeCount++
-				fmt.Printf("manifest debug: include object type=%T value=%s\n", t.O, termKey(t.O))
+				fmt.Printf("manifest debug: include object type=%T value=%s\n", q.O, termKey(q.O))
 			}
-			if t.P.Value == rdfFirst {
+			if q.P.Value == rdfFirst {
 				firstCount++
 			}
-			if t.P.Value == rdfRest {
+			if q.P.Value == rdfRest {
 				restCount++
 			}
 		}
-		fmt.Printf("manifest debug: %s entries=%d includes=%d first=%d rest=%d triples=%d\n", manifestPath, entryCount, includeCount, firstCount, restCount, len(triples))
+		fmt.Printf("manifest debug: %s entries=%d includes=%d first=%d rest=%d quads=%d\n", manifestPath, entryCount, includeCount, firstCount, restCount, len(quads))
 	}
 
 	entryNodes := collectManifestListObjects(bySubject, mfEntries)
@@ -408,28 +401,28 @@ func tokenToTerm(token string, prefixes map[string]string) Term {
 	return nil
 }
 
-func groupTriplesBySubject(triples []Triple) map[string][]Triple {
-	out := make(map[string][]Triple)
-	for _, t := range triples {
-		key := termKey(t.S)
-		out[key] = append(out[key], t)
+func groupTriplesBySubject(quads []Quad) map[string][]Quad {
+	out := make(map[string][]Quad)
+	for _, q := range quads {
+		key := termKey(q.S)
+		out[key] = append(out[key], q)
 	}
 	return out
 }
 
-func collectManifestListObjects(bySubject map[string][]Triple, predicateIRI string) []Term {
+func collectManifestListObjects(bySubject map[string][]Quad, predicateIRI string) []Term {
 	var items []Term
-	for _, triples := range bySubject {
-		for _, t := range triples {
-			if t.P.Value == predicateIRI {
-				items = append(items, listItems(t.O, bySubject)...)
+	for _, quads := range bySubject {
+		for _, q := range quads {
+			if q.P.Value == predicateIRI {
+				items = append(items, listItems(q.O, bySubject)...)
 			}
 		}
 	}
 	return items
 }
 
-func listItems(list Term, bySubject map[string][]Triple) []Term {
+func listItems(list Term, bySubject map[string][]Quad) []Term {
 	var items []Term
 	current := list
 	for current != nil {
@@ -449,7 +442,7 @@ func listItems(list Term, bySubject map[string][]Triple) []Term {
 	return items
 }
 
-func manifestObject(subject Term, bySubject map[string][]Triple, predicateIRI string) Term {
+func manifestObject(subject Term, bySubject map[string][]Quad, predicateIRI string) Term {
 	if subject == nil {
 		return nil
 	}
@@ -461,7 +454,7 @@ func manifestObject(subject Term, bySubject map[string][]Triple, predicateIRI st
 	return nil
 }
 
-func manifestObjects(subject Term, bySubject map[string][]Triple, predicateIRI string) []Term {
+func manifestObjects(subject Term, bySubject map[string][]Quad, predicateIRI string) []Term {
 	if subject == nil {
 		return nil
 	}
@@ -474,7 +467,7 @@ func manifestObjects(subject Term, bySubject map[string][]Triple, predicateIRI s
 	return out
 }
 
-func buildManifestTestCase(entry Term, bySubject map[string][]Triple, baseDir string, manifestPath string) (w3cTestCase, bool) {
+func buildManifestTestCase(entry Term, bySubject map[string][]Quad, baseDir string, manifestPath string) (w3cTestCase, bool) {
 	types := manifestObjects(entry, bySubject, rdfType)
 	action := manifestObject(entry, bySubject, mfAction)
 	if action == nil {
@@ -2653,12 +2646,15 @@ func readNQuadsFile(path string) ([]Quad, error) {
 	if err != nil {
 		return nil, err
 	}
-	var quads []Quad
-	err = ParseQuads(context.Background(), strings.NewReader(string(data)), QuadFormatNQuads, QuadHandlerFunc(func(q Quad) error {
-		quads = append(quads, q)
-		return nil
-	}))
-	return quads, err
+	stmts, err := ReadAll(context.Background(), strings.NewReader(string(data)), FormatNQuads)
+	if err != nil {
+		return nil, err
+	}
+	quads := make([]Quad, len(stmts))
+	for i, s := range stmts {
+		quads[i] = s.AsQuad()
+	}
+	return quads, nil
 }
 
 func quadsIsomorphic(actual, expected []Quad) bool {
@@ -3326,14 +3322,16 @@ func runDirectoryTestsInDir(t *testing.T, testDir string, cfg formatConfig, forc
 			opts := DefaultDecodeOptions()
 			opts.AllowQuotedTripleStatement = allowQt
 
-			var parseErr error
-			if cfg.isTriple {
-				parseErr = ParseTriplesWithOptions(context.Background(), strings.NewReader(string(data)),
-					cfg.tripleFmt, opts, TripleHandlerFunc(func(Triple) error { return nil }))
-			} else {
-				parseErr = ParseQuadsWithOptions(context.Background(), strings.NewReader(string(data)),
-					cfg.quadFmt, opts, QuadHandlerFunc(func(Quad) error { return nil }))
+			// Convert DecodeOptions to unified Options
+			parseOpts := []Option{
+				OptContext(opts.Context),
+				OptMaxLineBytes(opts.MaxLineBytes),
+				OptMaxStatementBytes(opts.MaxStatementBytes),
+				OptMaxDepth(opts.MaxDepth),
+				OptMaxTriples(opts.MaxTriples),
 			}
+			parseErr := Parse(context.Background(), strings.NewReader(string(data)),
+				cfg.format, func(Statement) error { return nil }, parseOpts...)
 
 			if isNegative {
 				if parseErr == nil {
@@ -3385,14 +3383,14 @@ func TestW3CManifestsOptional(t *testing.T) {
 			if err != nil {
 				t.Fatalf("read file %s: %v", path, err)
 			}
+			var format Format
 			if strings.HasSuffix(entry.Name(), ".nt") {
-				if err := ParseTriples(context.Background(), strings.NewReader(string(data)), TripleFormatNTriples, TripleHandlerFunc(func(Triple) error { return nil })); err != nil {
-					t.Fatalf("parse error %s: %v", path, err)
-				}
+				format = FormatNTriples
 			} else {
-				if err := ParseTriples(context.Background(), strings.NewReader(string(data)), TripleFormatTurtle, TripleHandlerFunc(func(Triple) error { return nil })); err != nil {
-					t.Fatalf("parse error %s: %v", path, err)
-				}
+				format = FormatTurtle
+			}
+			if err := Parse(context.Background(), strings.NewReader(string(data)), format, func(Statement) error { return nil }); err != nil {
+				t.Fatalf("parse error %s: %v", path, err)
 			}
 		}
 	}

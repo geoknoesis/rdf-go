@@ -4,39 +4,54 @@ This guide covers common tasks and patterns when working with `rdf-go`.
 
 ## Parse RDF from a File
 
+Reading RDF from a file follows the same pattern as reading from any `io.Reader`. Always handle errors and close resources properly:
+
 ```go
 import (
+    "io"
     "os"
     "github.com/geoknoesis/rdf-go"
 )
 
+// Open the file
 file, err := os.Open("data.ttl")
 if err != nil {
     return err
 }
+// Always close the file when done
 defer file.Close()
 
-dec, err := rdf.NewTripleDecoder(file, rdf.TripleFormatTurtle)
+// Create a reader for Turtle format
+// The reader reads from the file
+dec, err := rdf.NewReader(file, rdf.FormatTurtle)
 if err != nil {
+    // Handle initialization errors (unsupported format, etc.)
     return err
 }
+// Always close the reader to release resources
 defer dec.Close()
 
+// Read statements one by one
 for {
-    triple, err := dec.Next()
+    stmt, err := dec.Next()
     if err == io.EOF {
+        // End of file reached - normal termination
         break
     }
     if err != nil {
+        // Handle parsing errors
         return err
     }
-    // process triple
+    
+    // Process the statement
+    // Each statement has S (subject), P (predicate), O (object), and G (graph)
+    processStatement(stmt)
 }
 ```
 
-## Use the ParseTriples Helper
+## Use the Parse Helper
 
-The `ParseTriples` function provides a convenient way to process RDF triples with a handler function:
+The `Parse` function provides a convenient way to process RDF statements with a handler function. It handles the reader lifecycle for you:
 
 ```go
 import (
@@ -45,96 +60,72 @@ import (
     "github.com/geoknoesis/rdf-go"
 )
 
+// Sample RDF input
 input := `<http://example.org/s> <http://example.org/p> "v" .`
 
+// Count statements as they are parsed
 count := 0
-err := rdf.ParseTriples(context.Background(), strings.NewReader(input), rdf.TripleFormatNTriples,
-    rdf.TripleHandlerFunc(func(t rdf.Triple) error {
+
+// Parse with a handler function
+// The handler is called for each statement found in the input
+err := rdf.Parse(context.Background(), strings.NewReader(input), rdf.FormatNTriples,
+    func(s rdf.Statement) error {
+        // This function is called for each statement
         count++
+        
+        // You can process the statement here
+        fmt.Printf("Statement %d: %s %s %s\n", 
+            count, s.S.String(), s.P.String(), s.O.String())
+        
+        // Return nil to continue, or an error to stop parsing
         return nil
-    }),
-)
-```
-
-## Use ParseQuads Helper
-
-The `ParseQuads` function provides a convenient way to process RDF quads with a handler function:
-
-```go
-import (
-    "context"
-    "strings"
-    "github.com/geoknoesis/rdf-go"
+    },
 )
 
-input := `<http://example.org/s> <http://example.org/p> "v" <http://example.org/g> .`
-
-count := 0
-err := rdf.ParseQuads(context.Background(), strings.NewReader(input), rdf.QuadFormatNQuads,
-    rdf.QuadHandlerFunc(func(q rdf.Quad) error {
-        count++
-        return nil
-    }),
-)
-```
-
-## Use ParseTriplesChan for Concurrent Processing
-
-`ParseTriplesChan` returns channels that can be used with goroutines:
-
-```go
-import (
-    "context"
-    "strings"
-    "github.com/geoknoesis/rdf-go"
-)
-
-input := `<http://example.org/s> <http://example.org/p> "v" .`
-
-out, errs := rdf.ParseTriplesChan(context.Background(), strings.NewReader(input), rdf.TripleFormatNTriples)
-
-// Process triples in a goroutine
-go func() {
-    for t := range out {
-        // process triple
-    }
-}()
-
-// Check for errors
-if err, ok := <-errs; ok && err != nil {
-    // handle error
+if err != nil {
+    // Handle errors (parse errors, context cancellation, etc.)
+    return err
 }
+
+fmt.Printf("Parsed %d statements\n", count)
 ```
 
-## Use ParseQuadsChan for Concurrent Processing
+## Use ReadAll for Small Datasets
 
-`ParseQuadsChan` returns channels that can be used with goroutines:
+For small datasets that fit in memory, `ReadAll` loads all statements at once. **Warning:** This loads everything into memory, so use `Parse` or `NewReader` for large files:
 
 ```go
 import (
     "context"
-    "strings"
     "github.com/geoknoesis/rdf-go"
 )
 
-input := `<http://example.org/s> <http://example.org/p> "v" <http://example.org/g> .`
+// ReadAll loads all statements from the reader into a slice
+// FormatAuto enables automatic format detection
+stmts, err := rdf.ReadAll(context.Background(), reader, rdf.FormatAuto)
+if err != nil {
+    // Handle errors (format detection failure, parse errors, etc.)
+    return err
+}
 
-out, errs := rdf.ParseQuadsChan(context.Background(), strings.NewReader(input), rdf.QuadFormatNQuads)
+// Now you have all statements in memory
+fmt.Printf("Loaded %d statements\n", len(stmts))
 
-// Process quads in a goroutine
-go func() {
-    for q := range out {
-        // process quad
+// Process them
+for i, stmt := range stmts {
+    fmt.Printf("Statement %d: %s %s %s\n", 
+        i+1, stmt.S.String(), stmt.P.String(), stmt.O.String())
+    
+    // Check if it's a quad
+    if stmt.IsQuad() {
+        fmt.Printf("  Graph: %s\n", stmt.G.String())
     }
-}()
-
-// Check for errors
-if err, ok := <-errs; ok && err != nil {
-    // handle error
 }
 ```
 
 ## Convert Between Formats
+
+Converting between formats is straightforward - read from one format and write to another. The unified `Statement` type works with all formats:
 
 ```go
 import (
@@ -143,109 +134,110 @@ import (
     "github.com/geoknoesis/rdf-go"
 )
 
-// Read from one format (triple format)
-dec, err := rdf.NewTripleDecoder(inputReader, rdf.TripleFormatTurtle)
+// Step 1: Create a reader for the input format (Turtle)
+dec, err := rdf.NewReader(inputReader, rdf.FormatTurtle)
 if err != nil {
     return err
 }
 defer dec.Close()
 
-// Write to another format (triple format)
+// Step 2: Create an writer for the output format (N-Triples)
 var buf bytes.Buffer
-enc, err := rdf.NewTripleEncoder(&buf, rdf.TripleFormatNTriples)
+enc, err := rdf.NewWriter(&buf, rdf.FormatNTriples)
 if err != nil {
     return err
 }
 defer enc.Close()
 
-// Stream conversion
+// Step 3: Stream conversion - read from reader, write to writer
+// This is memory-efficient as it processes one statement at a time
 for {
-    triple, err := dec.Next()
+    stmt, err := dec.Next()
     if err == io.EOF {
+        // End of input
         break
     }
     if err != nil {
+        // Handle read errors
         return err
     }
-    if err := enc.Write(triple); err != nil {
+    
+    // Write the statement to the writer
+    // The writer automatically handles format conversion
+    if err := enc.Write(stmt); err != nil {
+        // Handle write errors
         return err
     }
 }
 
+// Step 4: Flush any buffered data
 if err := enc.Flush(); err != nil {
     return err
 }
+
+// The converted RDF is now in buf
+fmt.Print(buf.String())
 ```
 
-## Filter Triples
+## Filter Statements
 
-You can filter triples during parsing:
+You can filter statements during parsing by checking their properties in the handler function:
 
 ```go
-err := rdf.ParseTriples(context.Background(), reader, rdf.TripleFormatTurtle,
-    rdf.TripleHandlerFunc(func(t rdf.Triple) error {
-        // Only process triples with a specific predicate
-        if t.P.Value == "http://example.org/name" {
-            // process triple
-        }
-        return nil
-    }),
+import (
+    "context"
+    "github.com/geoknoesis/rdf-go"
 )
-```
 
-## Filter Quads
-
-You can filter quads during parsing:
-
-```go
-err := rdf.ParseQuads(context.Background(), reader, rdf.QuadFormatTriG,
-    rdf.QuadHandlerFunc(func(q rdf.Quad) error {
-        // Only process quads with a specific predicate
-        if q.P.Value == "http://example.org/name" {
-            // process quad
+// Filter statements by predicate
+err := rdf.Parse(context.Background(), reader, rdf.FormatTurtle,
+    func(s rdf.Statement) error {
+        // Only process statements with a specific predicate
+        // s.P is the predicate (IRI)
+        if s.P.Value == "http://example.org/name" {
+            // This statement has the "name" predicate
+            fmt.Printf("Name: %s\n", s.O.String())
         }
+        
+        // You can filter by other properties too:
+        // - s.S: subject
+        // - s.O: object
+        // - s.G: graph (for quads)
+        // - s.IsTriple() or s.IsQuad(): statement type
+        
+        // Return nil to continue, or an error to stop
         return nil
-    }),
+    },
 )
-```
 
-## Handle Errors Gracefully
-
-```go
-dec, err := rdf.NewTripleDecoder(reader, rdf.TripleFormatTurtle)
 if err != nil {
-    if err == rdf.ErrUnsupportedFormat {
-        // handle unsupported format
-    }
     return err
-}
-defer dec.Close()
-
-for {
-    triple, err := dec.Next()
-    if err == io.EOF {
-        break
-    }
-    if err != nil {
-        // Log error but continue processing if possible
-        log.Printf("Error reading triple: %v", err)
-        continue
-    }
-    // process triple
 }
 ```
 
 ## Work with Named Graphs
 
+Named graphs allow you to group statements together. Quad formats (TriG, N-Quads) support named graphs:
+
 ```go
-dec, err := rdf.NewQuadDecoder(reader, rdf.QuadFormatTriG)
+import (
+    "io"
+    "github.com/geoknoesis/rdf-go"
+)
+
+// Use a quad format to read named graphs
+// TriG is like Turtle but supports named graphs
+dec, err := rdf.NewReader(reader, rdf.FormatTriG)
 if err != nil {
     return err
 }
 defer dec.Close()
 
+// Group statements by graph
+graphs := make(map[string][]rdf.Statement)
+
 for {
-    quad, err := dec.Next()
+    stmt, err := dec.Next()
     if err == io.EOF {
         break
     }
@@ -253,83 +245,138 @@ for {
         return err
     }
     
-    // Check if quad is in a named graph
-    if quad.G != nil {
-        fmt.Printf("Graph: %s\n", quad.G.String())
+    // Check if statement is a quad (has a graph name)
+    if stmt.IsQuad() {
+        // This statement belongs to a named graph
+        graphName := stmt.G.String()
+        fmt.Printf("Statement in graph: %s\n", graphName)
+        
+        // Group statements by graph
+        graphs[graphName] = append(graphs[graphName], stmt)
+    } else {
+        // This statement is in the default graph (no graph name)
+        fmt.Println("Statement in default graph")
+        graphs[""] = append(graphs[""], stmt)
     }
-    
-    // process quad
+}
+
+// Now you can process each graph separately
+for graphName, stmts := range graphs {
+    fmt.Printf("Graph '%s' has %d statements\n", graphName, len(stmts))
 }
 ```
 
 ## Create RDF-star Quoted Triples
 
+RDF-star allows you to make statements about statements. This is useful for provenance, trust, or metadata about statements:
+
 ```go
-// Create a quoted triple
+import (
+    "bytes"
+    "github.com/geoknoesis/rdf-go"
+)
+
+// Step 1: Create a quoted triple
+// This represents a statement that can be used as a subject or object
 quoted := rdf.TripleTerm{
-    S: rdf.IRI{Value: "http://example.org/alice"},
-    P: rdf.IRI{Value: "http://example.org/said"},
-    O: rdf.Literal{Lexical: "Hello"},
+    S: rdf.IRI{Value: "http://example.org/alice"},  // Subject of the quoted triple
+    P: rdf.IRI{Value: "http://example.org/said"},  // Predicate of the quoted triple
+    O: rdf.Literal{Lexical: "Hello"},              // Object of the quoted triple
 }
 
-// Use it as a subject
-stmt := rdf.Triple{
-    S: quoted,
-    P: rdf.IRI{Value: "http://example.org/asserted"},
-    O: rdf.Literal{Lexical: "true"},
+// Step 2: Use the quoted triple as a subject in a new statement
+// This says: "The statement 'Alice said Hello' is asserted to be true"
+stmt := rdf.Statement{
+    S: quoted,  // Subject is the quoted triple (RDF-star feature)
+    P: rdf.IRI{Value: "http://example.org/asserted"}, // Predicate: "is asserted"
+    O: rdf.Literal{Lexical: "true"},                 // Object: true
+    // G omitted - defaults to nil (this is a triple)
 }
 
-// Encode it
-enc, _ := rdf.NewTripleEncoder(&buf, rdf.TripleFormatTurtle)
-_ = enc.Write(stmt)
-_ = enc.Close()
+// Step 3: Encode it to a format that supports RDF-star (Turtle, TriG)
+var buf bytes.Buffer
+enc, err := rdf.NewWriter(&buf, rdf.FormatTurtle)
+if err != nil {
+    return err
+}
+defer enc.Close()
+
+if err := enc.Write(stmt); err != nil {
+    return err
+}
+
+// The encoded output shows the quoted triple
+fmt.Print(buf.String())
+// Output: <<http://example.org/alice http://example.org/said "Hello">> 
+//          <http://example.org/asserted> "true" .
 ```
 
 ## Detect Term Types
 
+All RDF terms implement the `Term` interface. Use `Kind()` to determine the type and then use type assertions to access specific fields:
+
 ```go
+import "github.com/geoknoesis/rdf-go"
+
 func processTerm(term rdf.Term) {
+    // Use Kind() to determine the term type
     switch term.Kind() {
     case rdf.TermIRI:
+        // Type assert to IRI to access the Value field
         iri := term.(rdf.IRI)
         fmt.Printf("IRI: %s\n", iri.Value)
+        
     case rdf.TermBlankNode:
+        // Type assert to BlankNode to access the ID field
         bnode := term.(rdf.BlankNode)
         fmt.Printf("Blank node: %s\n", bnode.ID)
+        
     case rdf.TermLiteral:
+        // Type assert to Literal to access Lexical, Datatype, Lang fields
         lit := term.(rdf.Literal)
-        fmt.Printf("Literal: %s\n", lit.Lexical)
+        fmt.Printf("Literal: %s", lit.Lexical)
+        if lit.Datatype.Value != "" {
+            fmt.Printf(" (datatype: %s)", lit.Datatype.Value)
+        }
+        if lit.Lang != "" {
+            fmt.Printf(" (lang: %s)", lit.Lang)
+        }
+        fmt.Println()
+        
     case rdf.TermTriple:
+        // Type assert to TripleTerm (RDF-star quoted triple)
         triple := term.(rdf.TripleTerm)
         fmt.Printf("Quoted triple: %s\n", triple.String())
     }
+}
+
+// Example usage:
+func processStatement(stmt rdf.Statement) {
+    fmt.Println("Subject:")
+    processTerm(stmt.S)
+    
+    fmt.Println("Object:")
+    processTerm(stmt.O)
 }
 ```
 
 ## Parse Format from String
 
 ```go
-// Parse triple format from user input or file extension
-format, ok := rdf.ParseTripleFormat("ttl")
+// Parse format from user input or file extension
+format, ok := rdf.ParseFormat("ttl")
 if !ok {
     // handle unknown format
 }
 
-// Triple format aliases:
-// "turtle", "ttl" -> TripleFormatTurtle
-// "ntriples", "nt" -> TripleFormatNTriples
-// "rdfxml", "rdf", "xml" -> TripleFormatRDFXML
-// "jsonld", "json-ld", "json" -> TripleFormatJSONLD
-
-// Parse quad format from user input or file extension
-format, ok := rdf.ParseQuadFormat("nq")
-if !ok {
-    // handle unknown format
-}
-
-// Quad format aliases:
-// "trig" -> QuadFormatTriG
-// "nquads", "nq" -> QuadFormatNQuads
+// Supported aliases:
+// "turtle", "ttl" -> FormatTurtle
+// "ntriples", "nt" -> FormatNTriples
+// "rdfxml", "rdf", "xml" -> FormatRDFXML
+// "jsonld", "json-ld", "json" -> FormatJSONLD
+// "trig" -> FormatTriG
+// "nquads", "nq" -> FormatNQuads
+// "", "auto" -> FormatAuto
 ```
 
 ## Batch Processing
@@ -338,47 +385,82 @@ For efficient batch processing, use buffering:
 
 ```go
 const batchSize = 1000
-batch := make([]rdf.Triple, 0, batchSize)
+batch := make([]rdf.Statement, 0, batchSize)
 
-err := rdf.ParseTriples(context.Background(), reader, rdf.TripleFormatTurtle,
-    rdf.TripleHandlerFunc(func(t rdf.Triple) error {
-        batch = append(batch, t)
+err := rdf.Parse(context.Background(), reader, rdf.FormatTurtle,
+    func(s rdf.Statement) error {
+        batch = append(batch, s)
         if len(batch) >= batchSize {
             // process batch
             processBatch(batch)
             batch = batch[:0] // reset slice
         }
         return nil
-    }),
+    },
 )
 
-// Process remaining triples
+// Process remaining statements
 if len(batch) > 0 {
     processBatch(batch)
 }
 ```
 
-For quads:
+## Use Auto-Detection
+
+The library can automatically detect the format from input:
 
 ```go
-const batchSize = 1000
-batch := make([]rdf.Quad, 0, batchSize)
-
-err := rdf.ParseQuads(context.Background(), reader, rdf.QuadFormatTriG,
-    rdf.QuadHandlerFunc(func(q rdf.Quad) error {
-        batch = append(batch, q)
-        if len(batch) >= batchSize {
-            // process batch
-            processBatch(batch)
-            batch = batch[:0] // reset slice
-        }
-        return nil
-    }),
-)
-
-// Process remaining quads
-if len(batch) > 0 {
-    processBatch(batch)
+// Auto-detect format
+dec, err := rdf.NewReader(reader, rdf.FormatAuto)
+if err != nil {
+    return err
 }
+defer dec.Close()
+
+// Or use Parse with auto-detection
+err := rdf.Parse(context.Background(), reader, rdf.FormatAuto,
+    func(s rdf.Statement) error {
+        // process statement
+        return nil
+    },
+)
 ```
 
+## Set Security Limits
+
+For untrusted input, always set security limits:
+
+```go
+dec, err := rdf.NewReader(reader, rdf.FormatTurtle,
+    rdf.OptSafeLimits(),        // Apply safe limits
+    rdf.OptMaxDepth(50),        // Set maximum nesting depth
+    rdf.OptContext(ctx),        // Set context for cancellation
+    rdf.OptMaxLineBytes(64<<10), // Set maximum line size
+)
+```
+
+## Convert Between Statement, Triple, and Quad
+
+```go
+// Triple to Statement
+triple := rdf.Triple{...}
+stmt := triple.ToStatement()
+
+// Quad to Statement
+quad := rdf.Quad{...}
+stmt := quad.ToStatement()
+
+// Statement to Triple
+triple := stmt.AsTriple()
+
+// Statement to Quad
+quad := stmt.AsQuad()
+
+// Check statement type
+if stmt.IsTriple() {
+    // Handle triple
+}
+if stmt.IsQuad() {
+    // Handle quad
+}
+```

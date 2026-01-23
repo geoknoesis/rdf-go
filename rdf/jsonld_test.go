@@ -10,7 +10,7 @@ import (
 
 func TestJSONLDParseArrayGraph(t *testing.T) {
 	input := `{"@context":{"ex":"http://example.org/"},"@graph":[{"@id":"ex:s","ex:p":{"@id":"ex:o"}}]}`
-	dec, err := NewTripleDecoder(strings.NewReader(input), TripleFormatJSONLD)
+	dec, err := NewReader(strings.NewReader(input), FormatJSONLD)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -25,7 +25,7 @@ func TestJSONLDParseArrayGraph(t *testing.T) {
 
 func TestJSONLDMissingID(t *testing.T) {
 	input := `{"@context":{"ex":"http://example.org/"},"ex:p":"v"}`
-	dec, err := NewTripleDecoder(strings.NewReader(input), TripleFormatJSONLD)
+	dec, err := NewReader(strings.NewReader(input), FormatJSONLD)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -36,7 +36,7 @@ func TestJSONLDMissingID(t *testing.T) {
 
 func TestJSONLDUnsupportedValue(t *testing.T) {
 	input := `{"@context":{"ex":"http://example.org/"},"@id":"ex:s","ex:p":{"unexpected":1}}`
-	dec, err := NewTripleDecoder(strings.NewReader(input), TripleFormatJSONLD)
+	dec, err := NewReader(strings.NewReader(input), FormatJSONLD)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -46,7 +46,7 @@ func TestJSONLDUnsupportedValue(t *testing.T) {
 }
 
 func TestJSONLDEncoderCloseWithoutWrite(t *testing.T) {
-	enc, err := NewTripleEncoder(&bytes.Buffer{}, TripleFormatJSONLD)
+	enc, err := NewWriter(&bytes.Buffer{}, FormatJSONLD)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -56,12 +56,12 @@ func TestJSONLDEncoderCloseWithoutWrite(t *testing.T) {
 }
 
 func TestJSONLDEncoderClosedError(t *testing.T) {
-	enc, err := NewTripleEncoder(&bytes.Buffer{}, TripleFormatJSONLD)
+	enc, err := NewWriter(&bytes.Buffer{}, FormatJSONLD)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	_ = enc.Close()
-	if err := enc.Write(Triple{S: IRI{Value: "s"}, P: IRI{Value: "p"}, O: Literal{Lexical: "v"}}); err == nil {
+	if err := enc.Write(Statement{S: IRI{Value: "s"}, P: IRI{Value: "p"}, O: Literal{Lexical: "v"}, G: nil}); err == nil {
 		t.Fatal("expected closed writer error")
 	}
 }

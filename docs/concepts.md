@@ -1,6 +1,6 @@
 # Concepts
 
-This document explains the core concepts in `rdf-go`, including RDF terms, triples, quads, and how they're represented in the library.
+This document explains the core concepts in `rdf-go`, including RDF terms, statements, and how they're represented in the library.
 
 ## RDF Terms
 
@@ -59,18 +59,53 @@ quoted := rdf.TripleTerm{
 }
 
 // Use the quoted triple as a subject
-stmt := rdf.Triple{
+stmt := rdf.Statement{
     S: quoted,
     P: rdf.IRI{Value: "http://example.org/asserted"},
     O: rdf.Literal{Lexical: "true"},
+    G: nil,
 }
 ```
 
-## Triples and Quads
+## Statements
+
+### Statement
+
+A `Statement` represents an RDF statement, which can be either a triple or a quad. This is the primary type used in the unified API.
+
+```go
+// A triple (G is nil)
+stmt := rdf.Statement{
+    S: rdf.IRI{Value: "http://example.org/alice"},
+    P: rdf.IRI{Value: "http://example.org/name"},
+    O: rdf.Literal{Lexical: "Alice"},
+    G: nil, // nil indicates a triple
+}
+
+// A quad (G is non-nil)
+stmt := rdf.Statement{
+    S: rdf.IRI{Value: "http://example.org/alice"},
+    P: rdf.IRI{Value: "http://example.org/name"},
+    O: rdf.Literal{Lexical: "Alice"},
+    G: rdf.IRI{Value: "http://example.org/graph1"}, // non-nil indicates a quad
+}
+
+// Check statement type
+if stmt.IsTriple() {
+    // This is a triple
+}
+if stmt.IsQuad() {
+    // This is a quad
+}
+
+// Convert if needed
+triple := stmt.AsTriple()
+quad := stmt.AsQuad()
+```
 
 ### Triple
 
-A triple consists of three components:
+A `Triple` consists of three components:
 - **Subject (S)**: The resource the statement is about
 - **Predicate (P)**: The property or relationship
 - **Object (O)**: The value or target resource
@@ -81,11 +116,14 @@ triple := rdf.Triple{
     P: rdf.IRI{Value: "http://example.org/name"},
     O: rdf.Literal{Lexical: "Alice"},
 }
+
+// Convert to Statement
+stmt := triple.ToStatement()
 ```
 
 ### Quad
 
-A quad extends a triple with an optional fourth component:
+A `Quad` extends a triple with an optional fourth component:
 - **Graph (G)**: The named graph containing the triple
 
 ```go
@@ -95,9 +133,15 @@ quad := rdf.Quad{
     O: rdf.Literal{Lexical: "Alice"},
     G: rdf.IRI{Value: "http://example.org/graph1"},
 }
-```
 
-If the graph component is `nil`, the quad represents a triple in the default graph.
+// Convert to Statement
+stmt := quad.ToStatement()
+
+// Check if in default graph
+if quad.InDefaultGraph() {
+    // G is nil
+}
+```
 
 ## Term Interface
 
@@ -120,26 +164,28 @@ The `Kind()` method returns the type of term:
 
 The library uses a streaming model for efficient processing:
 
-- **Decoders** use a pull-style API: call `Next()` to get the next quad
-- **Encoders** use a push-style API: call `Write()` to output a quad
+- **Readers** use a pull-style API: call `Next()` to get the next statement
+- **Writers** use a push-style API: call `Write()` to output a statement
 
 This design minimizes memory usage and allows processing of large RDF datasets without loading everything into memory.
 
 ## Format Support
 
-The library supports multiple RDF serialization formats, separated into triple-only and quad formats:
+The library supports multiple RDF serialization formats using a unified `Format` type:
 
-**Triple formats** (use with `NewTripleDecoder`/`NewTripleEncoder`):
-- **Turtle** (`TripleFormatTurtle`): Human-readable format with prefixes
-- **N-Triples** (`TripleFormatNTriples`): Simple line-based format
-- **RDF/XML** (`TripleFormatRDFXML`): XML-based serialization
-- **JSON-LD** (`TripleFormatJSONLD`): JSON-based linked data format
+**Triple formats:**
+- **Turtle** (`FormatTurtle`): Human-readable format with prefixes
+- **N-Triples** (`FormatNTriples`): Simple line-based format
+- **RDF/XML** (`FormatRDFXML`): XML-based serialization
+- **JSON-LD** (`FormatJSONLD`): JSON-based linked data format
 
-**Quad formats** (use with `NewQuadDecoder`/`NewQuadEncoder`):
-- **TriG** (`QuadFormatTriG`): Turtle with named graphs
-- **N-Quads** (`QuadFormatNQuads`): N-Triples with graph names
+**Quad formats:**
+- **TriG** (`FormatTriG`): Turtle with named graphs
+- **N-Quads** (`FormatNQuads`): N-Triples with graph names
 
-The API enforces type safety: triple formats can only be used with triple decoders/encoders, and quad formats can only be used with quad decoders/encoders. This prevents format mismatches at compile time.
+**Auto-detection:**
+- **FormatAuto**: Automatically detect format from input
+
+All formats work with the unified `Reader` and `Writer` interfaces. The `Statement` type is used for all formats, with `G` being `nil` for triple-only formats.
 
 Each format can be used for both reading (decoding) and writing (encoding).
-

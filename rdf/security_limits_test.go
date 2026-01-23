@@ -17,8 +17,7 @@ func TestMaxTriplesLimit(t *testing.T) {
 	input := strings.Join(lines, "")
 
 	// Set limit to 5 triples
-	opts := DecodeOptions{MaxTriples: 5}
-	dec, err := NewTripleDecoderWithOptions(strings.NewReader(input), TripleFormatNTriples, DecodeOptionsToOptions(opts)...)
+	dec, err := NewReader(strings.NewReader(input), FormatNTriples, OptMaxTriples(5))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -57,8 +56,7 @@ func TestMaxTriplesLimitNQuads(t *testing.T) {
 	input := strings.Join(lines, "")
 
 	// Set limit to 3 quads
-	opts := DecodeOptions{MaxTriples: 3}
-	dec, err := NewQuadDecoderWithOptions(strings.NewReader(input), QuadFormatNQuads, DecodeOptionsToOptions(opts)...)
+	dec, err := NewReader(strings.NewReader(input), FormatNQuads, OptMaxTriples(3))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -93,8 +91,7 @@ func TestMaxDepthLimitTurtle(t *testing.T) {
 	input = "<http://example.org/s> <http://example.org/p> " + input
 
 	// Set limit to 3 levels
-	opts := DecodeOptions{MaxDepth: 3}
-	dec, err := NewTripleDecoderWithOptions(strings.NewReader(input), TripleFormatTurtle, DecodeOptionsToOptions(opts)...)
+	dec, err := NewReader(strings.NewReader(input), FormatTurtle, OptMaxDepth(3))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -121,8 +118,7 @@ func TestMaxDepthLimitBlankNodeList(t *testing.T) {
 	input = "<http://example.org/s> <http://example.org/p> " + input
 
 	// Set limit to 3 levels
-	opts := DecodeOptions{MaxDepth: 3}
-	dec, err := NewTripleDecoderWithOptions(strings.NewReader(input), TripleFormatTurtle, DecodeOptionsToOptions(opts)...)
+	dec, err := NewReader(strings.NewReader(input), FormatTurtle, OptMaxDepth(3))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -149,8 +145,7 @@ func TestMaxDepthLimitTriG(t *testing.T) {
 	input = "@prefix ex: <http://example.org/> .\n" + input
 
 	// Set limit to 3 levels
-	opts := DecodeOptions{MaxDepth: 3}
-	dec, err := NewQuadDecoderWithOptions(strings.NewReader(input), QuadFormatTriG, DecodeOptionsToOptions(opts)...)
+	dec, err := NewReader(strings.NewReader(input), FormatTriG, OptMaxDepth(3))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -184,8 +179,7 @@ func TestContextCancellation(t *testing.T) {
 	// Give it a moment to expire
 	time.Sleep(2 * time.Millisecond)
 
-	opts := DecodeOptions{Context: ctx}
-	dec, err := NewTripleDecoderWithOptions(strings.NewReader(input), TripleFormatNTriples, DecodeOptionsToOptions(opts)...)
+	dec, err := NewReader(strings.NewReader(input), FormatNTriples, OptContext(ctx))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -237,7 +231,7 @@ func TestErrorLineNumberTracking(t *testing.T) {
 	input := "<http://example.org/s> <http://example.org/p> <http://example.org/o> .\n" +
 		"<http://example.org/s2> <http://example.org/p2> <http://example.org/o2>\n" // Missing dot
 
-	dec, err := NewTripleDecoder(strings.NewReader(input), TripleFormatNTriples)
+	dec, err := NewReader(strings.NewReader(input), FormatNTriples)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -266,11 +260,11 @@ func TestFunctionalOptions(t *testing.T) {
 	// Test that functional options work correctly
 	input := "<http://example.org/s> <http://example.org/p> <http://example.org/o> .\n"
 
-	dec, err := NewTripleDecoderWithOptions(
+	dec, err := NewReader(
 		strings.NewReader(input),
-		TripleFormatNTriples,
-		WithMaxTriples(1),
-		WithMaxDepth(50),
+		FormatNTriples,
+		OptMaxTriples(1),
+		OptMaxDepth(50),
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -292,10 +286,10 @@ func TestFunctionalOptions(t *testing.T) {
 func TestWithSafeLimits(t *testing.T) {
 	input := "<http://example.org/s> <http://example.org/p> <http://example.org/o> .\n"
 
-	dec, err := NewTripleDecoderWithOptions(
+	dec, err := NewReader(
 		strings.NewReader(input),
-		TripleFormatNTriples,
-		WithSafeLimits(),
+		FormatNTriples,
+		OptSafeLimits(),
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

@@ -12,48 +12,35 @@ func (f failingWriter) Write(p []byte) (int, error) {
 	return 0, io.ErrClosedPipe
 }
 
-func TestNewTripleDecoderUnsupportedFormat(t *testing.T) {
-	_, err := NewTripleDecoder(bytes.NewReader(nil), TripleFormat("bogus"))
+func TestNewReaderUnsupportedFormat(t *testing.T) {
+	_, err := NewReader(bytes.NewReader(nil), Format("bogus"))
 	if err != ErrUnsupportedFormat {
 		t.Fatalf("expected ErrUnsupportedFormat, got %v", err)
 	}
 }
 
-func TestNewQuadDecoderUnsupportedFormat(t *testing.T) {
-	_, err := NewQuadDecoder(bytes.NewReader(nil), QuadFormat("bogus"))
-	if err != ErrUnsupportedFormat {
-		t.Fatalf("expected ErrUnsupportedFormat, got %v", err)
-	}
-}
-
-func TestNewTripleEncoderUnsupportedFormat(t *testing.T) {
-	_, err := NewTripleEncoder(&bytes.Buffer{}, TripleFormat("bogus"))
-	if err != ErrUnsupportedFormat {
-		t.Fatalf("expected ErrUnsupportedFormat, got %v", err)
-	}
-}
-
-func TestNewQuadEncoderUnsupportedFormat(t *testing.T) {
-	_, err := NewQuadEncoder(&bytes.Buffer{}, QuadFormat("bogus"))
+func TestNewWriterUnsupportedFormat(t *testing.T) {
+	_, err := NewWriter(&bytes.Buffer{}, Format("bogus"))
 	if err != ErrUnsupportedFormat {
 		t.Fatalf("expected ErrUnsupportedFormat, got %v", err)
 	}
 }
 
 func TestTripleEncodersWriteAndFlush(t *testing.T) {
-	triple := Triple{
+	stmt := Statement{
 		S: IRI{Value: "http://example.org/s"},
 		P: IRI{Value: "http://example.org/p"},
 		O: Literal{Lexical: "v"},
+		G: nil,
 	}
-	formats := []TripleFormat{TripleFormatNTriples, TripleFormatTurtle, TripleFormatRDFXML, TripleFormatJSONLD}
+	formats := []Format{FormatNTriples, FormatTurtle, FormatRDFXML, FormatJSONLD}
 	for _, format := range formats {
 		var buf bytes.Buffer
-		enc, err := NewTripleEncoder(&buf, format)
+		enc, err := NewWriter(&buf, format)
 		if err != nil {
 			t.Fatalf("format %s: %v", format, err)
 		}
-		if err := enc.Write(triple); err != nil {
+		if err := enc.Write(stmt); err != nil {
 			t.Fatalf("format %s: write error %v", format, err)
 		}
 		if err := enc.Flush(); err != nil {
@@ -66,20 +53,20 @@ func TestTripleEncodersWriteAndFlush(t *testing.T) {
 }
 
 func TestQuadEncodersWriteAndFlush(t *testing.T) {
-	quad := Quad{
+	stmt := Statement{
 		S: IRI{Value: "http://example.org/s"},
 		P: IRI{Value: "http://example.org/p"},
 		O: Literal{Lexical: "v"},
 		G: IRI{Value: "http://example.org/g"},
 	}
-	formats := []QuadFormat{QuadFormatNQuads, QuadFormatTriG}
+	formats := []Format{FormatNQuads, FormatTriG}
 	for _, format := range formats {
 		var buf bytes.Buffer
-		enc, err := NewQuadEncoder(&buf, format)
+		enc, err := NewWriter(&buf, format)
 		if err != nil {
 			t.Fatalf("format %s: %v", format, err)
 		}
-		if err := enc.Write(quad); err != nil {
+		if err := enc.Write(stmt); err != nil {
 			t.Fatalf("format %s: write error %v", format, err)
 		}
 		if err := enc.Flush(); err != nil {
@@ -92,16 +79,17 @@ func TestQuadEncodersWriteAndFlush(t *testing.T) {
 }
 
 func TestTripleEncoderWriteError(t *testing.T) {
-	enc, err := NewTripleEncoder(failingWriter{}, TripleFormatNTriples)
+	enc, err := NewWriter(failingWriter{}, FormatNTriples)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	triple := Triple{
+	stmt := Statement{
 		S: IRI{Value: "http://example.org/s"},
 		P: IRI{Value: "http://example.org/p"},
 		O: Literal{Lexical: "v"},
+		G: nil,
 	}
-	if err := enc.Write(triple); err != nil {
+	if err := enc.Write(stmt); err != nil {
 		t.Fatalf("unexpected write error: %v", err)
 	}
 	if err := enc.Flush(); err == nil {

@@ -2,28 +2,28 @@ package rdf
 
 import "testing"
 
-func TestParseTripleFormat(t *testing.T) {
+func TestParseFormat(t *testing.T) {
 	cases := []struct {
 		input  string
-		want   TripleFormat
+		want   Format
 		expect bool
 	}{
-		{"turtle", TripleFormatTurtle, true},
-		{"ttl", TripleFormatTurtle, true},
-		{"ntriples", TripleFormatNTriples, true},
-		{"nt", TripleFormatNTriples, true},
-		{"rdfxml", TripleFormatRDFXML, true},
-		{"rdf", TripleFormatRDFXML, true},
-		{"xml", TripleFormatRDFXML, true},
-		{"jsonld", TripleFormatJSONLD, true},
-		{"json-ld", TripleFormatJSONLD, true},
-		{"json", TripleFormatJSONLD, true},
+		{"turtle", FormatTurtle, true},
+		{"ttl", FormatTurtle, true},
+		{"ntriples", FormatNTriples, true},
+		{"nt", FormatNTriples, true},
+		{"rdfxml", FormatRDFXML, true},
+		{"rdf", FormatRDFXML, true},
+		{"xml", FormatRDFXML, true},
+		{"jsonld", FormatJSONLD, true},
+		{"json-ld", FormatJSONLD, true},
+		{"json", FormatJSONLD, true},
 		{"unknown", "", false},
-		{"trig", "", false},
-		{"nquads", "", false},
+		{"trig", FormatTriG, true},
+		{"nquads", FormatNQuads, true},
 	}
 	for _, c := range cases {
-		got, ok := ParseTripleFormat(c.input)
+		got, ok := ParseFormat(c.input)
 		if ok != c.expect {
 			t.Fatalf("input %q ok=%v want %v", c.input, ok, c.expect)
 		}
@@ -33,21 +33,19 @@ func TestParseTripleFormat(t *testing.T) {
 	}
 }
 
-func TestParseQuadFormat(t *testing.T) {
+func TestParseFormat_QuadFormats(t *testing.T) {
 	cases := []struct {
 		input  string
-		want   QuadFormat
+		want   Format
 		expect bool
 	}{
-		{"trig", QuadFormatTriG, true},
-		{"nquads", QuadFormatNQuads, true},
-		{"nq", QuadFormatNQuads, true},
+		{"trig", FormatTriG, true},
+		{"nquads", FormatNQuads, true},
+		{"nq", FormatNQuads, true},
 		{"unknown", "", false},
-		{"turtle", "", false},
-		{"ntriples", "", false},
 	}
 	for _, c := range cases {
-		got, ok := ParseQuadFormat(c.input)
+		got, ok := ParseFormat(c.input)
 		if ok != c.expect {
 			t.Fatalf("input %q ok=%v want %v", c.input, ok, c.expect)
 		}

@@ -8,7 +8,7 @@ import (
 
 func TestNTriplesDecodeErrors(t *testing.T) {
 	input := "<http://example.org/s> <http://example.org/p> .\n"
-	dec, err := NewTripleDecoder(strings.NewReader(input), TripleFormatNTriples)
+	dec, err := NewReader(strings.NewReader(input), FormatNTriples)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -17,7 +17,7 @@ func TestNTriplesDecodeErrors(t *testing.T) {
 	}
 
 	input = "<http://example.org/s> <http://example.org/p> <http://example.org/o>\n"
-	dec, err = NewTripleDecoder(strings.NewReader(input), TripleFormatNTriples)
+	dec, err = NewReader(strings.NewReader(input), FormatNTriples)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -28,7 +28,7 @@ func TestNTriplesDecodeErrors(t *testing.T) {
 
 func TestNQuadsRejectGraphInTriples(t *testing.T) {
 	line := "<http://example.org/s> <http://example.org/p> <http://example.org/o> <http://example.org/g> .\n"
-	dec, err := NewTripleDecoder(strings.NewReader(line), TripleFormatNTriples)
+	dec, err := NewReader(strings.NewReader(line), FormatNTriples)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -39,7 +39,7 @@ func TestNQuadsRejectGraphInTriples(t *testing.T) {
 
 func TestNTriplesDecodeBlankAndLiteral(t *testing.T) {
 	line := "_:b1 <http://example.org/p> \"v\"@en .\n"
-	dec, err := NewTripleDecoder(strings.NewReader(line), TripleFormatNTriples)
+	dec, err := NewReader(strings.NewReader(line), FormatNTriples)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -57,7 +57,7 @@ func TestNTriplesDecodeBlankAndLiteral(t *testing.T) {
 
 func TestNTriplesDecodeDatatypeLiteral(t *testing.T) {
 	line := "<http://example.org/s> <http://example.org/p> \"1\"^^<http://example.org/dt> .\n"
-	dec, err := NewTripleDecoder(strings.NewReader(line), TripleFormatNTriples)
+	dec, err := NewReader(strings.NewReader(line), FormatNTriples)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -72,7 +72,7 @@ func TestNTriplesDecodeDatatypeLiteral(t *testing.T) {
 
 func TestNTriplesDecodeTripleTerm(t *testing.T) {
 	line := "<< <http://example.org/s> <http://example.org/p> <http://example.org/o> >> <http://example.org/p2> <http://example.org/o2> .\n"
-	dec, err := NewTripleDecoder(strings.NewReader(line), TripleFormatNTriples)
+	dec, err := NewReader(strings.NewReader(line), FormatNTriples)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -83,7 +83,7 @@ func TestNTriplesDecodeTripleTerm(t *testing.T) {
 
 func TestNTriplesDecodeTripleTermError(t *testing.T) {
 	line := "<< <http://example.org/s> <http://example.org/p> <http://example.org/o> <http://example.org/p2> <http://example.org/o2> .\n"
-	dec, err := NewTripleDecoder(strings.NewReader(line), TripleFormatNTriples)
+	dec, err := NewReader(strings.NewReader(line), FormatNTriples)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -94,7 +94,7 @@ func TestNTriplesDecodeTripleTermError(t *testing.T) {
 
 func TestNTriplesDecodeUnterminatedIRI(t *testing.T) {
 	line := "<http://example.org/s <http://example.org/p> <http://example.org/o> .\n"
-	dec, err := NewTripleDecoder(strings.NewReader(line), TripleFormatNTriples)
+	dec, err := NewReader(strings.NewReader(line), FormatNTriples)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -105,7 +105,7 @@ func TestNTriplesDecodeUnterminatedIRI(t *testing.T) {
 
 func TestNTriplesDecodeInvalidBlank(t *testing.T) {
 	line := "_: <http://example.org/p> <http://example.org/o> .\n"
-	dec, err := NewTripleDecoder(strings.NewReader(line), TripleFormatNTriples)
+	dec, err := NewReader(strings.NewReader(line), FormatNTriples)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -116,17 +116,17 @@ func TestNTriplesDecodeInvalidBlank(t *testing.T) {
 
 func TestNTriplesEncodeErrors(t *testing.T) {
 	var buf bytes.Buffer
-	enc, err := NewTripleEncoder(&buf, TripleFormatNTriples)
+	enc, err := NewWriter(&buf, FormatNTriples)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	// Test with valid triple
-	if err := enc.Write(Triple{S: IRI{Value: "s"}, P: IRI{Value: "p"}, O: IRI{Value: "o"}}); err != nil {
+	if err := enc.Write(Statement{S: IRI{Value: "s"}, P: IRI{Value: "p"}, O: IRI{Value: "o"}, G: nil}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	// Close to set error state
 	_ = enc.Close()
-	if err := enc.Write(Triple{S: IRI{Value: "s2"}, P: IRI{Value: "p2"}, O: IRI{Value: "o2"}}); err == nil {
+	if err := enc.Write(Statement{S: IRI{Value: "s2"}, P: IRI{Value: "p2"}, O: IRI{Value: "o2"}, G: nil}); err == nil {
 		t.Fatal("expected cached error")
 	}
 }

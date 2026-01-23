@@ -8,7 +8,7 @@ import (
 
 func TestRDFXMLResourceObject(t *testing.T) {
 	input := `<?xml version="1.0"?><rdf:RDF xmlns:rdf="` + rdfXMLNS + `"><rdf:Description rdf:about="http://example.org/s"><ex:p xmlns:ex="http://example.org/" rdf:resource="http://example.org/o"/></rdf:Description></rdf:RDF>`
-	dec, err := NewTripleDecoder(strings.NewReader(input), TripleFormatRDFXML)
+	dec, err := NewReader(strings.NewReader(input), FormatRDFXML)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -23,7 +23,7 @@ func TestRDFXMLResourceObject(t *testing.T) {
 
 func TestRDFXMLNodeIDObject(t *testing.T) {
 	input := `<?xml version="1.0"?><rdf:RDF xmlns:rdf="` + rdfXMLNS + `"><rdf:Description rdf:about="http://example.org/s"><ex:p xmlns:ex="http://example.org/" rdf:nodeID="b1"/></rdf:Description></rdf:RDF>`
-	dec, err := NewTripleDecoder(strings.NewReader(input), TripleFormatRDFXML)
+	dec, err := NewReader(strings.NewReader(input), FormatRDFXML)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -38,7 +38,7 @@ func TestRDFXMLNodeIDObject(t *testing.T) {
 
 func TestRDFXMLUnsupportedNestedElement(t *testing.T) {
 	input := `<?xml version="1.0"?><rdf:RDF xmlns:rdf="` + rdfXMLNS + `"><rdf:Description rdf:about="http://example.org/s"><ex:p xmlns:ex="http://example.org/"><ex:nested>v</ex:nested></ex:p></rdf:Description></rdf:RDF>`
-	dec, err := NewTripleDecoder(strings.NewReader(input), TripleFormatRDFXML)
+	dec, err := NewReader(strings.NewReader(input), FormatRDFXML)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -48,14 +48,15 @@ func TestRDFXMLUnsupportedNestedElement(t *testing.T) {
 }
 
 func TestRDFXMLEncoderUnsupportedObject(t *testing.T) {
-	enc, err := NewTripleEncoder(&bytes.Buffer{}, TripleFormatRDFXML)
+	enc, err := NewWriter(&bytes.Buffer{}, FormatRDFXML)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	err = enc.Write(Triple{
+	err = enc.Write(Statement{
 		S: IRI{Value: "http://example.org/s"},
 		P: IRI{Value: "http://example.org/p"},
 		O: BlankNode{ID: "b1"},
+		G: nil,
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

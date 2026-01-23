@@ -5,15 +5,14 @@
 // Author: Stephane Fellah (stephanef@geoknoesis.com)
 // Geosemantic-AI expert with 30 years of experience
 //
-// It focuses on fast, low-allocation I/O with a small surface area and type safety:
-//   - Decode: NewTripleDecoder() and NewQuadDecoder() return pull-style decoders.
-//   - Encode: NewTripleEncoder() and NewQuadEncoder() return push-style encoders.
-//   - Parse: ParseTriples() and ParseQuads() provide streaming helpers.
-//   - ParseChan: ParseTriplesChan() and ParseQuadsChan() provide channel-based parsing.
+// It focuses on fast, low-allocation I/O with a small surface area and unified API:
+//   - Read: NewReader() returns a unified reader that works with all formats.
+//   - Write: NewWriter() returns a unified writer that works with all formats.
+//   - Parse: Parse() provides streaming parsing with a handler function.
+//   - ReadAll: ReadAll() provides convenience for small datasets.
 //
-// The API enforces type safety: triple formats can only be used with triple decoders/encoders,
-// and quad formats can only be used with quad decoders/encoders. This prevents format
-// mismatches at compile time.
+// The API uses a unified Format type for all formats. Use FormatAuto to enable
+// automatic format detection from input.
 //
 // Supported formats:
 //   - Triple formats: Turtle, N-Triples, RDF/XML, JSON-LD
@@ -22,54 +21,56 @@
 // RDF-star is represented via TripleTerm, allowing quoted triples to appear
 // as subjects or objects.
 //
-// Example (decoding triples):
+// Example (decoding with auto-detection):
 //
-//	dec, err := rdf.NewTripleDecoder(strings.NewReader(input), rdf.TripleFormatNTriples)
+//	dec, err := rdf.NewReader(strings.NewReader(input), rdf.FormatAuto)
 //	if err != nil {
 //	    // handle error
 //	}
 //	defer dec.Close()
 //
 //	for {
-//	    triple, err := dec.Next()
+//	    stmt, err := dec.Next()
 //	    if err == io.EOF {
 //	        break
 //	    }
 //	    if err != nil {
 //	        // handle error
 //	    }
-//	    // process triple.S, triple.P, triple.O
+//	    // process statement (use stmt.IsTriple() or stmt.IsQuad() to check type)
 //	}
 //
-// Example (decoding quads):
+// Example (creating statements):
 //
-//	dec, err := rdf.NewQuadDecoder(strings.NewReader(input), rdf.QuadFormatNQuads)
-//	if err != nil {
-//	    // handle error
-//	}
-//	defer dec.Close()
-//
-//	for {
-//	    quad, err := dec.Next()
-//	    if err == io.EOF {
-//	        break
-//	    }
-//	    if err != nil {
-//	        // handle error
-//	    }
-//	    // process quad.S, quad.P, quad.O, quad.G
+//	// Option 1: Omit G (defaults to nil for triples)
+//	stmt := rdf.Statement{
+//	    S: rdf.IRI{Value: "http://example.org/s"},
+//	    P: rdf.IRI{Value: "http://example.org/p"},
+//	    O: rdf.IRI{Value: "http://example.org/o"},
+//	    // G omitted - defaults to nil (triple)
 //	}
 //
-// For unsupported formats, NewTripleDecoder, NewQuadDecoder, NewTripleEncoder,
-// and NewQuadEncoder return ErrUnsupportedFormat.
+//	// Option 2: Use convenience function
+//	stmt := rdf.NewTriple(
+//	    rdf.IRI{Value: "http://example.org/s"},
+//	    rdf.IRI{Value: "http://example.org/p"},
+//	    rdf.IRI{Value: "http://example.org/o"},
+//	)
+//
+// Example (parsing with handler):
+//
+//	err := rdf.Parse(context.Background(), reader, rdf.FormatTurtle, func(s rdf.Statement) error {
+//	    // process statement
+//	    return nil
+//	})
+//
+// For unsupported formats, NewReader and NewWriter return ErrUnsupportedFormat.
 //
 // The API is intentionally small and favors streaming. For large inputs,
-// prefer NewTripleDecoder/NewQuadDecoder or ParseTriples/ParseQuads instead
-// of buffering all results.
+// prefer NewReader or Parse instead of ReadAll.
 //
-// Decoder options can be provided via NewTripleDecoderWithOptions and
-// NewQuadDecoderWithOptions to enforce line/statement limits for untrusted input.
-// Streaming helpers also have WithOptions variants for the same purpose.
+// Options can be provided via functional options (OptContext, OptMaxDepth, etc.)
+// to configure behavior and enforce limits for untrusted input.
 //
 // RDF/XML container elements (rdf:Bag, rdf:Seq, rdf:Alt, rdf:List) are parsed as node
 // elements; container membership expansion is not implemented.

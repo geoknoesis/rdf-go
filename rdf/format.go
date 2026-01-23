@@ -2,54 +2,58 @@ package rdf
 
 import "strings"
 
-// TripleFormat represents RDF formats that only support triples.
-type TripleFormat string
+// Format represents an RDF serialization format.
+// Use FormatAuto (empty string) to enable automatic format detection.
+type Format string
 
 const (
-	// TripleFormatTurtle is the Turtle format.
-	TripleFormatTurtle TripleFormat = "turtle"
-	// TripleFormatNTriples is the N-Triples format.
-	TripleFormatNTriples TripleFormat = "ntriples"
-	// TripleFormatRDFXML is the RDF/XML format.
-	TripleFormatRDFXML TripleFormat = "rdfxml"
-	// TripleFormatJSONLD is the JSON-LD format.
-	TripleFormatJSONLD TripleFormat = "jsonld"
+	// FormatAuto enables automatic format detection from input.
+	FormatAuto Format = ""
+	
+	// Triple formats
+	FormatTurtle   Format = "turtle"
+	FormatNTriples Format = "ntriples"
+	FormatRDFXML   Format = "rdfxml"
+	FormatJSONLD   Format = "jsonld"
+	
+	// Quad formats
+	FormatTriG   Format = "trig"
+	FormatNQuads Format = "nquads"
 )
 
-// QuadFormat represents RDF formats that support quads (named graphs).
-type QuadFormat string
-
-const (
-	// QuadFormatTriG is the TriG format.
-	QuadFormatTriG QuadFormat = "trig"
-	// QuadFormatNQuads is the N-Quads format.
-	QuadFormatNQuads QuadFormat = "nquads"
-)
-
-// ParseTripleFormat normalizes a format string and returns a TripleFormat if valid.
-func ParseTripleFormat(value string) (TripleFormat, bool) {
-	switch strings.ToLower(strings.TrimSpace(value)) {
+// ParseFormat normalizes a format string and returns a Format.
+// Supports common aliases (e.g., "ttl" -> FormatTurtle, "nt" -> FormatNTriples).
+func ParseFormat(s string) (Format, bool) {
+	s = strings.ToLower(strings.TrimSpace(s))
+	switch s {
+	case "", "auto":
+		return FormatAuto, true
 	case "turtle", "ttl":
-		return TripleFormatTurtle, true
+		return FormatTurtle, true
 	case "ntriples", "nt":
-		return TripleFormatNTriples, true
+		return FormatNTriples, true
 	case "rdfxml", "rdf", "xml":
-		return TripleFormatRDFXML, true
+		return FormatRDFXML, true
 	case "jsonld", "json-ld", "json":
-		return TripleFormatJSONLD, true
+		return FormatJSONLD, true
+	case "trig":
+		return FormatTriG, true
+	case "nquads", "nq":
+		return FormatNQuads, true
 	default:
 		return "", false
 	}
 }
 
-// ParseQuadFormat normalizes a format string and returns a QuadFormat if valid.
-func ParseQuadFormat(value string) (QuadFormat, bool) {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "trig":
-		return QuadFormatTriG, true
-	case "nquads", "nq":
-		return QuadFormatNQuads, true
-	default:
-		return "", false
+// IsQuadFormat reports whether the format supports quads (named graphs).
+func (f Format) IsQuadFormat() bool {
+	return f == FormatTriG || f == FormatNQuads
+}
+
+// String returns the canonical format name.
+func (f Format) String() string {
+	if f == "" {
+		return "auto"
 	}
+	return string(f)
 }

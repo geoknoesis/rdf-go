@@ -51,7 +51,7 @@ func BenchmarkTurtleDecodeLarge(b *testing.B) {
 	input := strings.Repeat(benchTurtleInput, 100)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		dec, err := NewTripleDecoder(strings.NewReader(input), TripleFormatTurtle)
+		dec, err := NewReader(strings.NewReader(input), FormatTurtle)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -71,7 +71,7 @@ func BenchmarkNTriplesDecodeLarge(b *testing.B) {
 	input := strings.Repeat(benchNTriplesInput, 100)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		dec, err := NewTripleDecoder(strings.NewReader(input), TripleFormatNTriples)
+		dec, err := NewReader(strings.NewReader(input), FormatNTriples)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -91,7 +91,7 @@ func BenchmarkTriGDecode(b *testing.B) {
 	input := strings.Repeat(benchTriGInput, 100)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		dec, err := NewQuadDecoder(strings.NewReader(input), QuadFormatTriG)
+		dec, err := NewReader(strings.NewReader(input), FormatTriG)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -125,22 +125,22 @@ func BenchmarkJSONLDDecode(b *testing.B) {
 }
 
 func BenchmarkTurtleEncode(b *testing.B) {
-	triples := []Triple{
-		{S: IRI{Value: "http://example.org/s1"}, P: IRI{Value: "http://example.org/p1"}, O: IRI{Value: "http://example.org/o1"}},
-		{S: IRI{Value: "http://example.org/s2"}, P: IRI{Value: "http://example.org/p2"}, O: IRI{Value: "http://example.org/o2"}},
-		{S: IRI{Value: "http://example.org/s3"}, P: IRI{Value: "http://example.org/p3"}, O: IRI{Value: "http://example.org/o3"}},
-		{S: IRI{Value: "http://example.org/s4"}, P: IRI{Value: "http://example.org/p4"}, O: IRI{Value: "http://example.org/o4"}},
-		{S: IRI{Value: "http://example.org/s5"}, P: IRI{Value: "http://example.org/p5"}, O: IRI{Value: "http://example.org/o5"}},
+	stmts := []Statement{
+		{S: IRI{Value: "http://example.org/s1"}, P: IRI{Value: "http://example.org/p1"}, O: IRI{Value: "http://example.org/o1"}, G: nil},
+		{S: IRI{Value: "http://example.org/s2"}, P: IRI{Value: "http://example.org/p2"}, O: IRI{Value: "http://example.org/o2"}, G: nil},
+		{S: IRI{Value: "http://example.org/s3"}, P: IRI{Value: "http://example.org/p3"}, O: IRI{Value: "http://example.org/o3"}, G: nil},
+		{S: IRI{Value: "http://example.org/s4"}, P: IRI{Value: "http://example.org/p4"}, O: IRI{Value: "http://example.org/o4"}, G: nil},
+		{S: IRI{Value: "http://example.org/s5"}, P: IRI{Value: "http://example.org/p5"}, O: IRI{Value: "http://example.org/o5"}, G: nil},
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		var buf bytes.Buffer
-		enc, err := NewTripleEncoder(&buf, TripleFormatTurtle)
+		enc, err := NewWriter(&buf, FormatTurtle)
 		if err != nil {
 			b.Fatal(err)
 		}
-		for _, triple := range triples {
-			if err := enc.Write(triple); err != nil {
+		for _, stmt := range stmts {
+			if err := enc.Write(stmt); err != nil {
 				b.Fatal(err)
 			}
 		}
@@ -151,22 +151,22 @@ func BenchmarkTurtleEncode(b *testing.B) {
 }
 
 func BenchmarkNTriplesEncodeLarge(b *testing.B) {
-	triples := []Triple{
-		{S: IRI{Value: "http://example.org/s1"}, P: IRI{Value: "http://example.org/p1"}, O: IRI{Value: "http://example.org/o1"}},
-		{S: IRI{Value: "http://example.org/s2"}, P: IRI{Value: "http://example.org/p2"}, O: IRI{Value: "http://example.org/o2"}},
-		{S: IRI{Value: "http://example.org/s3"}, P: IRI{Value: "http://example.org/p3"}, O: IRI{Value: "http://example.org/o3"}},
-		{S: IRI{Value: "http://example.org/s4"}, P: IRI{Value: "http://example.org/p4"}, O: IRI{Value: "http://example.org/o4"}},
-		{S: IRI{Value: "http://example.org/s5"}, P: IRI{Value: "http://example.org/p5"}, O: IRI{Value: "http://example.org/o5"}},
+	stmts := []Statement{
+		{S: IRI{Value: "http://example.org/s1"}, P: IRI{Value: "http://example.org/p1"}, O: IRI{Value: "http://example.org/o1"}, G: nil},
+		{S: IRI{Value: "http://example.org/s2"}, P: IRI{Value: "http://example.org/p2"}, O: IRI{Value: "http://example.org/o2"}, G: nil},
+		{S: IRI{Value: "http://example.org/s3"}, P: IRI{Value: "http://example.org/p3"}, O: IRI{Value: "http://example.org/o3"}, G: nil},
+		{S: IRI{Value: "http://example.org/s4"}, P: IRI{Value: "http://example.org/p4"}, O: IRI{Value: "http://example.org/o4"}, G: nil},
+		{S: IRI{Value: "http://example.org/s5"}, P: IRI{Value: "http://example.org/p5"}, O: IRI{Value: "http://example.org/o5"}, G: nil},
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		var buf bytes.Buffer
-		enc, err := NewTripleEncoder(&buf, TripleFormatNTriples)
+		enc, err := NewWriter(&buf, FormatNTriples)
 		if err != nil {
 			b.Fatal(err)
 		}
-		for _, triple := range triples {
-			if err := enc.Write(triple); err != nil {
+		for _, stmt := range stmts {
+			if err := enc.Write(stmt); err != nil {
 				b.Fatal(err)
 			}
 		}
@@ -181,10 +181,10 @@ func BenchmarkParseTriples(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		count := 0
-		err := ParseTriples(context.Background(), strings.NewReader(input), TripleFormatTurtle, TripleHandlerFunc(func(t Triple) error {
+		err := Parse(context.Background(), strings.NewReader(input), FormatTurtle, func(s Statement) error {
 			count++
 			return nil
-		}))
+		})
 		if err != nil {
 			b.Fatal(err)
 		}
