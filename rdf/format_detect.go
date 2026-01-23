@@ -60,10 +60,12 @@ func DetectFormat(r io.Reader) (TripleFormat, bool) {
 	// Check for N-Triples/N-Quads pattern (IRI <...> or blank node _:)
 	// N-Triples/N-Quads start with < or _: and don't have prefixes or directives
 	// Also check for blank node syntax _: which is used in N-Triples
-	if (strings.HasPrefix(sample, "<") || strings.HasPrefix(sample, "_:")) &&
+	hasNTriplesPattern := (strings.HasPrefix(sample, "<") || strings.HasPrefix(sample, "_:")) &&
 		!strings.Contains(sample, "@prefix") && !strings.Contains(sample, "@base") &&
 		!strings.Contains(strings.ToUpper(sample), "PREFIX") && !strings.Contains(strings.ToUpper(sample), "BASE") &&
-		!strings.Contains(sample, "[") && !strings.Contains(sample, "(") {
+		!strings.Contains(sample, "[") && !strings.Contains(sample, "(")
+	
+	if hasNTriplesPattern {
 		// Check if it ends with . (N-Triples) or has 4th component (N-Quads)
 		// For N-Triples: <s> <p> <o> . or _:b0 <p> <o> .
 		// For N-Quads: <s> <p> <o> <g> .
@@ -76,11 +78,25 @@ func DetectFormat(r io.Reader) (TripleFormat, bool) {
 	}
 
 	// Check for Turtle patterns (prefixes, base IRIs, collections, blank node lists)
-	// Turtle can have prefixes, base, or use : for prefixed names, or [] for blank nodes
-	if strings.Contains(sample, "@prefix") || strings.Contains(sample, "@base") ||
+	// Turtle can have prefixes, base, or use : for prefixed names (but not _:), or [] for blank nodes
+	hasTurtlePattern := strings.Contains(sample, "@prefix") || strings.Contains(sample, "@base") ||
 		strings.Contains(strings.ToUpper(sample), "PREFIX") || strings.Contains(strings.ToUpper(sample), "BASE") ||
-		(strings.Contains(sample, ":") && !strings.HasPrefix(sample, "_:")) ||
-		strings.Contains(sample, "[") || strings.Contains(sample, "(") {
+		strings.Contains(sample, "[") || strings.Contains(sample, "(")
+	
+	// Check for prefixed names (but exclude _: blank node syntax)
+	if !hasTurtlePattern && strings.Contains(sample, ":") {
+		// Check if it's a prefixed name (like ex:s) and not a blank node (_:b0)
+		// Prefixed names typically appear after whitespace or at start
+		parts := strings.Fields(sample)
+		for _, part := range parts {
+			if strings.Contains(part, ":") && !strings.HasPrefix(part, "_:") && !strings.HasPrefix(part, "<") {
+				hasTurtlePattern = true
+				break
+			}
+		}
+	}
+	
+	if hasTurtlePattern {
 		// Likely Turtle (uses prefixes, blank nodes, or collections)
 		return TripleFormatTurtle, true
 	}
