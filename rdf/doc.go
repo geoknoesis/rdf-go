@@ -66,4 +66,11 @@
 // The API is intentionally small and favors streaming. For large inputs,
 // prefer NewTripleDecoder/NewQuadDecoder or ParseTriples/ParseQuads instead
 // of buffering all results.
+//
+// Decoder options can be provided via NewTripleDecoderWithOptions and
+// NewQuadDecoderWithOptions to enforce line/statement limits for untrusted input.
+// Streaming helpers also have WithOptions variants for the same purpose.
+//
+// RDF/XML container elements (rdf:Bag, rdf:Seq, rdf:Alt, rdf:List) are parsed as node
+// elements; container membership expansion is not implemented.
 package rdf

@@ -76,12 +76,8 @@ func TestNTriplesDecodeTripleTerm(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	triple, err := dec.Next()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if _, ok := triple.S.(TripleTerm); !ok {
-		t.Fatalf("expected triple term subject")
+	if _, err := dec.Next(); err == nil {
+		t.Fatal("expected error for triple term subject")
 	}
 }
 

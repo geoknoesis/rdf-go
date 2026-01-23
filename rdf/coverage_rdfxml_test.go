@@ -2,7 +2,6 @@ package rdf
 
 import (
 	"bytes"
-	"encoding/xml"
 	"io"
 	"strings"
 	"testing"
@@ -42,8 +41,9 @@ func TestRDFXMLSubjectBranches(t *testing.T) {
 }
 
 func TestRDFXMLConsumeElementEOF(t *testing.T) {
-	dec := xml.NewDecoder(strings.NewReader("<rdf:RDF"))
-	if err := consumeElement(dec); err == nil {
+	rdfDec := newRDFXMLTripleDecoder(strings.NewReader("<rdf:RDF"))
+	dec := rdfDec.(*rdfxmlTripleDecoder)
+	if err := dec.consumeElement(); err == nil {
 		t.Fatal("expected consume error")
 	}
 }
@@ -98,6 +98,9 @@ func TestRDFXMLTypeQueue(t *testing.T) {
 func TestRDFXMLNextSkipsNonNodeElements(t *testing.T) {
 	input := `<?xml version="1.0"?><rdf:RDF xmlns:rdf="` + rdfXMLNS + `"><rdf:Bag></rdf:Bag></rdf:RDF>`
 	dec, _ := NewTripleDecoder(strings.NewReader(input), TripleFormatRDFXML)
+	if _, err := dec.Next(); err != nil {
+		t.Fatalf("expected type triple, got %v", err)
+	}
 	if _, err := dec.Next(); err != io.EOF {
 		t.Fatalf("expected EOF, got %v", err)
 	}

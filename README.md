@@ -199,4 +199,37 @@ if !ok {
   and quad formats can only be used with quad decoders/encoders.
 - For any format that is not supported, `NewTripleDecoder`/`NewQuadDecoder`/`NewTripleEncoder`/`NewQuadEncoder` returns
   `rdf.ErrUnsupportedFormat`.
+- RDF/XML container elements (rdf:Bag, rdf:Seq, rdf:Alt, rdf:List) are parsed as node elements;
+  container membership expansion is not implemented.
+
+## Decoder Limits
+
+For untrusted input, use the optioned constructors to enforce limits:
+
+```go
+dec, err := rdf.NewTripleDecoderWithOptions(r, rdf.TripleFormatTurtle, rdf.DecodeOptions{
+    MaxLineBytes:      1 << 20, // 1MB
+    MaxStatementBytes: 4 << 20, // 4MB
+})
+```
+
+You can also pass limits to streaming helpers:
+
+```go
+opts := rdf.DecodeOptions{MaxLineBytes: 1 << 20, MaxStatementBytes: 4 << 20}
+err := rdf.ParseTriplesWithOptions(ctx, r, rdf.TripleFormatTurtle, opts, handler)
+```
+
+JSON-LD decoding supports context cancellation and semantic limits:
+
+```go
+opts := rdf.JSONLDOptions{
+    Context:     ctx,
+    MaxInputBytes: 1 << 20,
+    MaxNodes:      10000,
+    MaxGraphItems: 10000,
+    MaxQuads:      20000,
+}
+dec := rdf.NewJSONLDTripleDecoder(r, opts)
+```
 

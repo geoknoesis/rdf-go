@@ -57,7 +57,7 @@ func TestRDFXMLEncoderUnsupportedObject(t *testing.T) {
 		P: IRI{Value: "http://example.org/p"},
 		O: BlankNode{ID: "b1"},
 	})
-	if err == nil {
-		t.Fatal("expected unsupported object error")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }

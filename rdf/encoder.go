@@ -18,11 +18,16 @@ type QuadEncoder interface {
 
 // NewTripleDecoder creates a decoder for triple-only formats.
 func NewTripleDecoder(r io.Reader, format TripleFormat) (TripleDecoder, error) {
+	return NewTripleDecoderWithOptions(r, format, DefaultDecodeOptions())
+}
+
+// NewTripleDecoderWithOptions creates a decoder for triple-only formats with options.
+func NewTripleDecoderWithOptions(r io.Reader, format TripleFormat, opts DecodeOptions) (TripleDecoder, error) {
 	switch format {
 	case TripleFormatTurtle:
-		return newTurtleTripleDecoder(r), nil
+		return newTurtleTripleDecoderWithOptions(r, opts), nil
 	case TripleFormatNTriples:
-		return newNTriplesTripleDecoder(r), nil
+		return newNTriplesTripleDecoderWithOptions(r, opts), nil
 	case TripleFormatRDFXML:
 		return newRDFXMLTripleDecoder(r), nil
 	case TripleFormatJSONLD:
@@ -34,11 +39,16 @@ func NewTripleDecoder(r io.Reader, format TripleFormat) (TripleDecoder, error) {
 
 // NewQuadDecoder creates a decoder for quad-capable formats.
 func NewQuadDecoder(r io.Reader, format QuadFormat) (QuadDecoder, error) {
+	return NewQuadDecoderWithOptions(r, format, DefaultDecodeOptions())
+}
+
+// NewQuadDecoderWithOptions creates a decoder for quad-capable formats with options.
+func NewQuadDecoderWithOptions(r io.Reader, format QuadFormat, opts DecodeOptions) (QuadDecoder, error) {
 	switch format {
 	case QuadFormatTriG:
-		return newTriGQuadDecoder(r), nil
+		return newTriGQuadDecoderWithOptions(r, opts), nil
 	case QuadFormatNQuads:
-		return newNQuadsQuadDecoder(r), nil
+		return newNQuadsQuadDecoderWithOptions(r, opts), nil
 	default:
 		return nil, ErrUnsupportedFormat
 	}
@@ -71,4 +81,3 @@ func NewQuadEncoder(w io.Writer, format QuadFormat) (QuadEncoder, error) {
 		return nil, ErrUnsupportedFormat
 	}
 }
-

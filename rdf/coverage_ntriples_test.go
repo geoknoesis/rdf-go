@@ -307,7 +307,7 @@ func TestNTriplesParseTermBranches(t *testing.T) {
 	if _, err := cursor.parseTerm(true); err != nil {
 		t.Fatalf("expected literal term")
 	}
-	cursor = &ntCursor{input: "<< <http://example.org/s> <http://example.org/p> <http://example.org/o> >>"}
+	cursor = &ntCursor{input: "<<( <http://example.org/s> <http://example.org/p> <http://example.org/o> )>>"}
 	if _, err := cursor.parseTerm(false); err != nil {
 		t.Fatalf("expected triple term")
 	}
@@ -336,12 +336,8 @@ func TestNTriplesParseLiteralExpectedError(t *testing.T) {
 
 func TestNTriplesParseLiteralUnknownEscape(t *testing.T) {
 	cursor := &ntCursor{input: "\"a\\x\""}
-	term, err := cursor.parseLiteral()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if term.Lexical != "ax" {
-		t.Fatalf("unexpected escape handling: %s", term.Lexical)
+	if _, err := cursor.parseLiteral(); err == nil {
+		t.Fatalf("expected invalid escape error")
 	}
 }
 
@@ -440,7 +436,7 @@ func TestNQuadsWriteNoGraph(t *testing.T) {
 
 func TestNTriplesParseSubjectTripleTerm(t *testing.T) {
 	cursor := &ntCursor{input: "<< <http://example.org/s> <http://example.org/p> <http://example.org/o> >>"}
-	if _, err := cursor.parseSubject(); err != nil {
-		t.Fatalf("expected triple term subject")
+	if _, err := cursor.parseSubject(); err == nil {
+		t.Fatalf("expected triple term subject error")
 	}
 }
