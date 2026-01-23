@@ -321,38 +321,69 @@ func parseJSONLDTopObjectStream(dec *json.Decoder, opts JSONLDOptions, sink json
 			}
 		case "@graph":
 			graphSeen = true
-			if valueToken == json.Delim('[') && topNode["@context"] != nil {
-				graphCount := 0
-				for dec.More() {
-					if err := state.checkContext(); err != nil {
+			// If @graph is an array and we have @context, stream it incrementally
+			if valueToken == json.Delim('[') {
+				if topNode["@context"] != nil {
+					// Stream array items incrementally - no buffering needed
+					graphCount := 0
+					for dec.More() {
+						if err := state.checkContext(); err != nil {
+							return err
+						}
+						itemToken, err := dec.Token()
+						if err != nil {
+							return err
+						}
+						item, err := decodeJSONValueFromToken(dec, itemToken)
+						if err != nil {
+							return err
+						}
+						graphCount++
+						if opts.MaxGraphItems > 0 && graphCount > opts.MaxGraphItems {
+							return fmt.Errorf("jsonld: @graph item limit exceeded")
+						}
+						node, ok := item.(map[string]interface{})
+						if !ok {
+							continue
+						}
+						ctx = ctx.withContext(node["@context"])
+						if err := parseJSONLDNode(node, ctx, nil, state, sink); err != nil {
+							return err
+						}
+					}
+					if _, err := dec.Token(); err != nil {
 						return err
 					}
-					itemToken, err := dec.Token()
-					if err != nil {
+					continue
+				} else {
+					// @context not seen yet - need to buffer, but we can stream the array items
+					// and only buffer them if we need to wait for @context
+					graphCount := 0
+					for dec.More() {
+						if err := state.checkContext(); err != nil {
+							return err
+						}
+						itemToken, err := dec.Token()
+						if err != nil {
+							return err
+						}
+						item, err := decodeJSONValueFromToken(dec, itemToken)
+						if err != nil {
+							return err
+						}
+						graphCount++
+						if opts.MaxGraphItems > 0 && graphCount > opts.MaxGraphItems {
+							return fmt.Errorf("jsonld: @graph item limit exceeded")
+						}
+						bufferedGraph = append(bufferedGraph, item)
+					}
+					if _, err := dec.Token(); err != nil {
 						return err
 					}
-					item, err := decodeJSONValueFromToken(dec, itemToken)
-					if err != nil {
-						return err
-					}
-					graphCount++
-					if opts.MaxGraphItems > 0 && graphCount > opts.MaxGraphItems {
-						return fmt.Errorf("jsonld: @graph item limit exceeded")
-					}
-					node, ok := item.(map[string]interface{})
-					if !ok {
-						continue
-					}
-					ctx = ctx.withContext(node["@context"])
-					if err := parseJSONLDNode(node, ctx, nil, state, sink); err != nil {
-						return err
-					}
+					continue
 				}
-				if _, err := dec.Token(); err != nil {
-					return err
-				}
-				continue
 			}
+			// For non-array @graph values, decode and handle
 			value, err := decodeJSONValueFromToken(dec, valueToken)
 			if err != nil {
 				return err
