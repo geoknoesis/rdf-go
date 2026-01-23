@@ -40,6 +40,8 @@ const (
 	TokAnnotationL
 	TokAnnotationR
 	TokA
+	TokLangTag
+	TokDatatypePrefix
 )
 
 const (
@@ -131,6 +133,10 @@ func (k turtleTokenKind) String() string {
 		return "TokAnnotationR"
 	case TokA:
 		return "TokA"
+	case TokLangTag:
+		return "TokLangTag"
+	case TokDatatypePrefix:
+		return "TokDatatypePrefix"
 	default:
 		return "TokUnknown"
 	}
@@ -221,6 +227,13 @@ func (s *turtleScanner) nextToken() (turtleToken, error) {
 		s.pos += 2
 		return turtleToken{Kind: TokAnnotationR, Lexeme: lexAnnotationR}, nil
 	}
+	if s.pos+1 < len(s.input) && s.input[s.pos] == '^' && s.input[s.pos+1] == '^' {
+		s.pos += 2
+		return turtleToken{Kind: TokDatatypePrefix, Lexeme: "^^"}, nil
+	}
+	if s.input[s.pos] == '@' {
+		return s.scanLangTag()
+	}
 	switch s.input[s.pos] {
 	case lexDot[0]:
 		s.pos++
@@ -300,6 +313,24 @@ func (s *turtleScanner) scanString() (turtleToken, error) {
 		s.pos++
 	}
 	return turtleToken{}, ErrStatementTooLong
+}
+
+func (s *turtleScanner) scanLangTag() (turtleToken, error) {
+	start := s.pos
+	s.pos++ // consume '@'
+	for s.pos < len(s.input) {
+		ch := s.input[s.pos]
+		next := byte(0)
+		if s.pos+1 < len(s.input) {
+			next = s.input[s.pos+1]
+		}
+		if isTurtleTerminator(ch, next) {
+			break
+		}
+		s.pos++
+	}
+	lang := s.input[start+1 : s.pos] // skip '@'
+	return turtleToken{Kind: TokLangTag, Lexeme: lang}, nil
 }
 
 func (s *turtleScanner) scanLongString(quote byte) (turtleToken, error) {
