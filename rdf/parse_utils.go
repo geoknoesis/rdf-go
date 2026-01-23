@@ -28,6 +28,14 @@ const (
 	directiveGraph     = "GRAPH"
 )
 
+// String literal length constants
+const (
+	minLongStringLength     = 6  // Minimum length for """...""" or '''...'''
+	minStringLength         = 2  // Minimum length for "..." or '...'
+	unicodeEscapeLength     = 6  // Length of \uXXXX escape sequence
+	unicodeLongEscapeLength = 10 // Length of \UXXXXXXXX escape sequence
+)
+
 func isHexDigit(ch byte) bool {
 	return (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F')
 }
@@ -399,7 +407,7 @@ func unescapeSimpleEscape(builder *strings.Builder, escapeChar byte) (int, error
 
 // unescapeUnicodeEscape handles \uXXXX escape sequences, including surrogate pairs.
 func unescapeUnicodeEscape(builder *strings.Builder, s string, pos int) (int, error) {
-	if pos+5 >= len(s) {
+	if pos+unicodeEscapeLength >= len(s) {
 		return 0, fmt.Errorf("invalid escape sequence")
 	}
 	codePoint := decodeUChar(s[pos+2 : pos+6])
@@ -443,7 +451,7 @@ func unescapeSurrogatePair(builder *strings.Builder, s string, pos int, high run
 
 // unescapeUnicodeLongEscape handles \UXXXXXXXX escape sequences.
 func unescapeUnicodeLongEscape(builder *strings.Builder, s string, pos int) (int, error) {
-	if pos+9 >= len(s) {
+	if pos+unicodeLongEscapeLength >= len(s) {
 		return 0, fmt.Errorf("invalid escape sequence")
 	}
 	var codePoint rune

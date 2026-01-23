@@ -67,7 +67,8 @@ func (d *trigQuadDecoder) Next() (Quad, error) {
 			line, err = d.nextLineOrRemainder()
 			if err != nil {
 				if err == io.EOF {
-					if statement.Len() == 0 {
+					isEmpty := statement.Len() == 0
+					if isEmpty {
 						return Quad{}, io.EOF
 					}
 					hitEOF = true
@@ -78,14 +79,15 @@ func (d *trigQuadDecoder) Next() (Quad, error) {
 			}
 
 			trimmed := strings.TrimSpace(stripComment(line))
+			isEmpty := statement.Len() == 0
 			if trimmed == "" {
-				if statement.Len() == 0 {
+				if isEmpty {
 					continue
 				}
 				continue
 			}
 
-			if statement.Len() == 0 && isTrigDirectiveLine(trimmed) {
+			if isEmpty && isTrigDirectiveLine(trimmed) {
 				combined, handled, err := d.maybeReadDirectiveContinuation(trimmed)
 				if err != nil {
 					d.err = err
@@ -102,12 +104,12 @@ func (d *trigQuadDecoder) Next() (Quad, error) {
 				return Quad{}, d.err
 			}
 
-			if statement.Len() == 0 && d.handleDirective(trimmed) {
+			if isEmpty && d.handleDirective(trimmed) {
 				continue
 			}
 
 			if trimmed == "}" {
-				if statement.Len() > 0 {
+				if !isEmpty {
 					closeGraphAfter = true
 					break
 				}
@@ -156,7 +158,7 @@ func (d *trigQuadDecoder) Next() (Quad, error) {
 				graphForStatement = d.graph
 				after := strings.TrimSpace(trimmed[openIdx+1:])
 				if after != "" {
-					if statement.Len() > 0 {
+					if !isEmpty {
 						statement.WriteString(" ")
 					}
 					statement.WriteString(after)
@@ -186,7 +188,9 @@ func (d *trigQuadDecoder) Next() (Quad, error) {
 				break
 			}
 
-			if statement.Len() > 0 {
+			// Update isEmpty check since we're about to add content
+			isEmpty = statement.Len() == 0
+			if !isEmpty {
 				statement.WriteString(" ")
 			}
 			statement.WriteString(trimmed)
@@ -194,8 +198,8 @@ func (d *trigQuadDecoder) Next() (Quad, error) {
 				d.err = ErrStatementTooLong
 				return Quad{}, d.err
 			}
-			stmt := strings.TrimSpace(statement.String())
-			if stmt != "" && isStatementComplete(stmt) {
+			// Check if statement is complete (only trim once when needed)
+			if isStatementComplete(strings.TrimSpace(statement.String())) {
 				break
 			}
 		}
@@ -205,9 +209,13 @@ func (d *trigQuadDecoder) Next() (Quad, error) {
 			return Quad{}, d.err
 		}
 
+		// Build the final statement string once
 		line := strings.TrimSpace(statement.String())
 		if closeGraphAfter && line != "" && !strings.HasSuffix(line, ".") {
-			line = line + " ."
+			var lineBuilder strings.Builder
+			lineBuilder.WriteString(line)
+			lineBuilder.WriteString(" .")
+			line = lineBuilder.String()
 		}
 		if line == "" {
 			if closeGraphAfter {
@@ -217,27 +225,10 @@ func (d *trigQuadDecoder) Next() (Quad, error) {
 			continue
 		}
 
-		statements := splitTurtleStatements(line)
-		var quads []Quad
-		for _, stmt := range statements {
-			stmt = strings.TrimSpace(stmt)
-			if stmt == "" {
-				continue
-			}
-			if !strings.HasSuffix(stmt, ".") {
-				stmt = stmt + " ."
-			}
-			stmt = normalizeTriGStatement(stmt)
-			parsed, err := d.parseTripleLine(stmt)
-			if err != nil {
-				err = d.wrapParseError(stmt, err)
-				d.err = err
-				return Quad{}, err
-			}
-			for i := range parsed {
-				parsed[i].G = graphForStatement
-			}
-			quads = append(quads, parsed...)
+		quads, err := d.processStatement(line, graphForStatement)
+		if err != nil {
+			d.err = err
+			return Quad{}, err
 		}
 		if closeGraphAfter {
 			d.graph = nil
@@ -251,6 +242,153 @@ func (d *trigQuadDecoder) Next() (Quad, error) {
 		}
 		return quads[0], nil
 	}
+}
+
+// buildStatement accumulates lines until we have a complete statement.
+// Returns: statement string, graphForStatement, closeGraphAfter, hitEOF, optional quad (if inline graph block), error
+func (d *trigQuadDecoder) buildStatement() (string, Term, bool, bool, *Quad, error) {
+	var statement strings.Builder
+	graphForStatement := d.graph
+	closeGraphAfter := false
+	hitEOF := false
+
+	for {
+		if err := d.checkContext(); err != nil {
+			return "", nil, false, false, nil, err
+		}
+		var line string
+		var err error
+		line, err = d.nextLineOrRemainder()
+		if err != nil {
+			if err == io.EOF {
+				isEmpty := statement.Len() == 0
+				if isEmpty {
+					return "", nil, false, false, nil, io.EOF
+				}
+				hitEOF = true
+				break
+			}
+			return "", nil, false, false, nil, err
+		}
+
+		trimmed := strings.TrimSpace(stripComment(line))
+		isEmpty := statement.Len() == 0
+		if trimmed == "" {
+			if isEmpty {
+				continue
+			}
+			continue
+		}
+
+		if isEmpty && isTrigDirectiveLine(trimmed) {
+			combined, handled, err := d.maybeReadDirectiveContinuation(trimmed)
+			if err != nil {
+				return "", nil, false, false, nil, err
+			}
+			if handled {
+				continue
+			}
+			trimmed = combined
+		}
+
+		if d.inGraphBlock && isTrigDirectiveLine(trimmed) {
+			return "", nil, false, false, nil, d.wrapParseError("", fmt.Errorf("directives not allowed inside graph"))
+		}
+
+		if isEmpty && d.handleDirective(trimmed) {
+			continue
+		}
+
+		if trimmed == "}" {
+			if !isEmpty {
+				closeGraphAfter = true
+				break
+			}
+			d.graph = nil
+			d.inGraphBlock = false
+			graphForStatement = d.graph
+			continue
+		}
+
+		openIdx, closeIdx := findGraphBlockBounds(trimmed)
+		if d.inGraphBlock && openIdx >= 0 && !isAnnotationBlock(trimmed, openIdx) {
+			return "", nil, false, false, nil, d.wrapParseError("", fmt.Errorf("nested graph blocks are not allowed"))
+		}
+		if openIdx >= 0 && closeIdx > openIdx && !isAnnotationBlock(trimmed, openIdx) {
+			quads, after, err := d.parseInlineGraphBlock(trimmed, openIdx, closeIdx)
+			if err != nil {
+				return "", nil, false, false, nil, err
+			}
+			if after != "" {
+				if !strings.Contains(after, "{") {
+					return "", nil, false, false, nil, d.wrapParseError("", fmt.Errorf("unexpected content after graph block"))
+				}
+				d.remainder = after
+			}
+			if len(quads) == 0 {
+				continue
+			}
+			if len(quads) > 1 {
+				d.pending = quads[1:]
+			}
+			quad := quads[0]
+			return "", nil, false, false, &quad, nil
+		}
+
+		if openIdx >= 0 && closeIdx < 0 && !isAnnotationBlock(trimmed, openIdx) {
+			graphToken := strings.TrimSpace(trimmed[:openIdx])
+			graphTerm, err := d.parseGraphToken(graphToken)
+			if err != nil {
+				return "", nil, false, false, nil, d.wrapParseError("", err)
+			}
+			d.graph = graphTerm
+			d.inGraphBlock = true
+			graphForStatement = d.graph
+			after := strings.TrimSpace(trimmed[openIdx+1:])
+			if after != "" {
+				if !isEmpty {
+					statement.WriteString(" ")
+				}
+				statement.WriteString(after)
+				if d.opts.MaxStatementBytes > 0 && statement.Len() > d.opts.MaxStatementBytes {
+					return "", nil, false, false, nil, ErrStatementTooLong
+				}
+			}
+			continue
+		}
+
+		handled, err := d.handleStartGraphBlock(trimmed, &graphForStatement)
+		if err != nil {
+			return "", nil, false, false, nil, err
+		}
+		if handled {
+			continue
+		}
+
+		shouldClose, err := d.handleInlineGraphClose(trimmed, &statement, &closeGraphAfter)
+		if err != nil {
+			return "", nil, false, false, nil, err
+		}
+		if shouldClose {
+			break
+		}
+
+		// Update isEmpty check since we're about to add content
+		isEmpty = statement.Len() == 0
+		if !isEmpty {
+			statement.WriteString(" ")
+		}
+		statement.WriteString(trimmed)
+		if d.opts.MaxStatementBytes > 0 && statement.Len() > d.opts.MaxStatementBytes {
+			return "", nil, false, false, nil, ErrStatementTooLong
+		}
+		// Check if statement is complete (only trim once when needed)
+		if isStatementComplete(strings.TrimSpace(statement.String())) {
+			break
+		}
+	}
+
+	return statement.String(), graphForStatement, closeGraphAfter, hitEOF, nil, nil
 }
 
 func (d *trigQuadDecoder) Err() error { return d.err }
@@ -333,13 +471,48 @@ func (d *trigQuadDecoder) handleDirective(line string) bool {
 
 func (d *trigQuadDecoder) parseTripleLine(line string) ([]Quad, error) {
 	debugStatements := d.opts.DebugStatements || (d.opts.AllowEnvOverrides && os.Getenv("TURTLE_DEBUG_STATEMENT") != "")
-	triples, err := parseTurtleStatement(d.prefixes, d.baseIRI, d.allowQuotedTripleStatement, debugStatements, line)
+	opts := TurtleParseOptions{
+		Prefixes:        d.prefixes,
+		BaseIRI:         d.baseIRI,
+		AllowQuoted:     d.allowQuotedTripleStatement,
+		DebugStatements: debugStatements,
+	}
+	triples, err := parseTurtleTripleLineWithOptions(opts, line)
 	if err != nil {
 		return nil, err
 	}
 	quads := make([]Quad, 0, len(triples))
 	for _, triple := range triples {
 		quads = append(quads, Quad{S: triple.S, P: triple.P, O: triple.O, G: d.graph})
+	}
+	return quads, nil
+}
+
+// processStatement parses a statement line and returns quads with the specified graph.
+func (d *trigQuadDecoder) processStatement(line string, graphForStatement Term) ([]Quad, error) {
+	statements := splitTurtleStatements(line)
+	var quads []Quad
+	for _, stmt := range statements {
+		stmt = strings.TrimSpace(stmt)
+		if stmt == "" {
+			continue
+		}
+		// Use strings.Builder for string concatenation instead of +
+		if !strings.HasSuffix(stmt, ".") {
+			var stmtBuilder strings.Builder
+			stmtBuilder.WriteString(stmt)
+			stmtBuilder.WriteString(" .")
+			stmt = stmtBuilder.String()
+		}
+		stmt = normalizeTriGStatement(stmt)
+		parsed, err := d.parseTripleLine(stmt)
+		if err != nil {
+			return nil, d.wrapParseError(stmt, err)
+		}
+		for i := range parsed {
+			parsed[i].G = graphForStatement
+		}
+		quads = append(quads, parsed...)
 	}
 	return quads, nil
 }
@@ -364,10 +537,19 @@ func (d *trigQuadDecoder) parseInlineGraphBlock(trimmed string, openIdx, closeId
 			continue
 		}
 		if !strings.HasSuffix(stmt, ".") {
-			stmt = stmt + " ."
+			var stmtBuilder strings.Builder
+			stmtBuilder.WriteString(stmt)
+			stmtBuilder.WriteString(" .")
+			stmt = stmtBuilder.String()
 		}
 		stmt = normalizeTriGStatement(stmt)
-		triples, err := parseTurtleStatement(d.prefixes, d.baseIRI, d.allowQuotedTripleStatement, debugStatements, stmt)
+		opts := TurtleParseOptions{
+			Prefixes:        d.prefixes,
+			BaseIRI:         d.baseIRI,
+			AllowQuoted:     d.allowQuotedTripleStatement,
+			DebugStatements: debugStatements,
+		}
+		triples, err := parseTurtleTripleLineWithOptions(opts, stmt)
 		if err != nil {
 			return nil, "", d.wrapParseError(stmt, err)
 		}

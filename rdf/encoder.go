@@ -1,6 +1,9 @@
 package rdf
 
-import "io"
+import (
+	"fmt"
+	"io"
+)
 
 // TripleEncoder streams RDF triples to an output.
 type TripleEncoder interface {
@@ -23,6 +26,9 @@ func NewTripleDecoder(r io.Reader, format TripleFormat) (TripleDecoder, error) {
 
 // NewTripleDecoderWithOptions creates a decoder for triple-only formats with options.
 func NewTripleDecoderWithOptions(r io.Reader, format TripleFormat, opts DecodeOptions) (TripleDecoder, error) {
+	if r == nil {
+		return nil, fmt.Errorf("reader cannot be nil")
+	}
 	switch format {
 	case TripleFormatTurtle:
 		return newTurtleTripleDecoderWithOptions(r, opts), nil
@@ -44,6 +50,9 @@ func NewQuadDecoder(r io.Reader, format QuadFormat) (QuadDecoder, error) {
 
 // NewQuadDecoderWithOptions creates a decoder for quad-capable formats with options.
 func NewQuadDecoderWithOptions(r io.Reader, format QuadFormat, opts DecodeOptions) (QuadDecoder, error) {
+	if r == nil {
+		return nil, fmt.Errorf("reader cannot be nil")
+	}
 	switch format {
 	case QuadFormatTriG:
 		return newTriGQuadDecoderWithOptions(r, opts), nil

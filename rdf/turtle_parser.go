@@ -392,7 +392,7 @@ func (p *turtleParser) parseLiteralTokens(stream *turtleTokenStream, allowLitera
 	var lexical string
 	if tok.Kind == TokStringLong {
 		// Long string: """...""" or '''...'''
-		if len(lexeme) < 6 {
+		if len(lexeme) < minLongStringLength {
 			return nil, p.wrapParseError("", fmt.Errorf("invalid long string"))
 		}
 		lexical = lexeme[3 : len(lexeme)-3] // Remove triple quotes
@@ -404,7 +404,7 @@ func (p *turtleParser) parseLiteralTokens(stream *turtleTokenStream, allowLitera
 		}
 	} else {
 		// Regular string: "..." or '...'
-		if len(lexeme) < 2 {
+		if len(lexeme) < minStringLength {
 			return nil, p.wrapParseError("", fmt.Errorf("invalid string"))
 		}
 		lexical = lexeme[1 : len(lexeme)-1] // Remove quotes

@@ -55,19 +55,43 @@ func generateCollectionTriples(objects []Term, expansionTriples *[]Triple, newBl
 	return head
 }
 
+// TurtleParseOptions contains options for parsing Turtle statements.
+type TurtleParseOptions struct {
+	Prefixes        map[string]string
+	BaseIRI         string
+	AllowQuoted     bool
+	DebugStatements bool
+}
+
 func parseTurtleStatement(prefixes map[string]string, baseIRI string, allowQuoted bool, debugStatements bool, line string) ([]Triple, error) {
-	return parseTurtleTripleLine(prefixes, baseIRI, allowQuoted, debugStatements, line)
+	opts := TurtleParseOptions{
+		Prefixes:        prefixes,
+		BaseIRI:         baseIRI,
+		AllowQuoted:     allowQuoted,
+		DebugStatements: debugStatements,
+	}
+	return parseTurtleTripleLineWithOptions(opts, line)
 }
 
 func parseTurtleTripleLine(prefixes map[string]string, baseIRI string, allowQuoted bool, debugStatements bool, line string) ([]Triple, error) {
+	opts := TurtleParseOptions{
+		Prefixes:        prefixes,
+		BaseIRI:         baseIRI,
+		AllowQuoted:     allowQuoted,
+		DebugStatements: debugStatements,
+	}
+	return parseTurtleTripleLineWithOptions(opts, line)
+}
+
+func parseTurtleTripleLineWithOptions(opts TurtleParseOptions, line string) ([]Triple, error) {
 	cursor := &turtleCursor{
 		input:                      line,
-		prefixes:                   prefixes,
-		base:                       baseIRI,
+		prefixes:                   opts.Prefixes,
+		base:                       opts.BaseIRI,
 		expansionTriples:           []Triple{},
 		blankNodeCounter:           0,
-		allowQuotedTripleStatement: allowQuoted,
-		debugStatements:            debugStatements,
+		allowQuotedTripleStatement: opts.AllowQuoted,
+		debugStatements:            opts.DebugStatements,
 	}
 	subject, err := cursor.parseSubject()
 	if err != nil {
@@ -779,119 +803,52 @@ func (c *turtleCursor) parseLiteralWithQuote(quoteChar byte) (Term, error) {
 	if !c.consume(quoteChar) {
 		return nil, c.errorf("expected literal")
 	}
-	var builder strings.Builder
+	// Collect the raw string content (with escape sequences intact)
+	var rawBuilder strings.Builder
 	for c.pos < len(c.input) {
 		ch := c.input[c.pos]
 		if ch == quoteChar {
 			c.pos++
 			break
 		}
+		// Collect escape sequences as-is for later unescaping
 		if ch == '\\' {
 			if c.pos+1 >= len(c.input) {
 				return nil, c.errorf("unterminated escape")
 			}
-			next := c.input[c.pos+1]
-			switch next {
-			case 'n':
-				builder.WriteByte('\n')
-				c.pos += 2
-			case 't':
-				builder.WriteByte('\t')
-				c.pos += 2
-			case 'r':
-				builder.WriteByte('\r')
-				c.pos += 2
-			case 'b':
-				builder.WriteByte('\b')
-				c.pos += 2
-			case 'f':
-				builder.WriteByte('\f')
-				c.pos += 2
-			case '"':
-				builder.WriteByte('"')
-				c.pos += 2
-			case '\'':
-				builder.WriteByte('\'')
-				c.pos += 2
-			case '\\':
-				builder.WriteByte('\\')
-				c.pos += 2
-			case 'u':
-				// Unicode escape \uXXXX - validate and decode (allow surrogate pairs)
-				if c.pos+5 >= len(c.input) {
+			rawBuilder.WriteByte(ch)
+			c.pos++
+			next := c.input[c.pos]
+			rawBuilder.WriteByte(next)
+			c.pos++
+			// For unicode escapes, collect the hex digits
+			if next == 'u' {
+				if c.pos+4 > len(c.input) {
 					return nil, c.errorf("invalid escape sequence")
 				}
-				var codePoint rune
-				for i := 2; i < 6; i++ {
-					hex := c.input[c.pos+i]
-					var digit int
-					if hex >= '0' && hex <= '9' {
-						digit = int(hex - '0')
-					} else if hex >= 'a' && hex <= 'f' {
-						digit = int(hex - 'a' + 10)
-					} else if hex >= 'A' && hex <= 'F' {
-						digit = int(hex - 'A' + 10)
-					} else {
-						return nil, c.errorf("invalid escape sequence")
-					}
-					codePoint = codePoint*16 + rune(digit)
+				for i := 0; i < 4 && c.pos < len(c.input); i++ {
+					rawBuilder.WriteByte(c.input[c.pos])
+					c.pos++
 				}
-				if codePoint >= unicodeSurrogateHighStart && codePoint <= unicodeSurrogateHighEnd {
-					if c.pos+11 >= len(c.input) || c.input[c.pos+6] != '\\' || c.input[c.pos+7] != 'u' {
-						return nil, c.errorf("invalid escape sequence")
-					}
-					low := decodeUChar(c.input[c.pos+8 : c.pos+12])
-					if low < 0 || low < unicodeSurrogateLowStart || low > unicodeSurrogateLowEnd {
-						return nil, c.errorf("invalid escape sequence")
-					}
-					combined := unicodeSurrogateBase + ((codePoint - unicodeSurrogateHighStart) << 10) + (low - unicodeSurrogateLowStart)
-					builder.WriteRune(rune(combined))
-					c.pos += 12
-					continue
-				}
-				if codePoint >= unicodeSurrogateLowStart && codePoint <= unicodeSurrogateLowEnd {
+			} else if next == 'U' {
+				if c.pos+8 > len(c.input) {
 					return nil, c.errorf("invalid escape sequence")
 				}
-				if !isValidUnicodeCodePoint(codePoint) {
-					return nil, c.errorf("invalid escape sequence")
+				for i := 0; i < 8 && c.pos < len(c.input); i++ {
+					rawBuilder.WriteByte(c.input[c.pos])
+					c.pos++
 				}
-				builder.WriteRune(codePoint)
-				c.pos += 6
-			case 'U':
-				// Unicode escape \UXXXXXXXX - validate and decode
-				if c.pos+9 >= len(c.input) {
-					return nil, c.errorf("invalid escape sequence")
-				}
-				var codePoint rune
-				for i := 2; i < 10; i++ {
-					hex := c.input[c.pos+i]
-					var digit int
-					if hex >= '0' && hex <= '9' {
-						digit = int(hex - '0')
-					} else if hex >= 'a' && hex <= 'f' {
-						digit = int(hex - 'a' + 10)
-					} else if hex >= 'A' && hex <= 'F' {
-						digit = int(hex - 'A' + 10)
-					} else {
-						return nil, c.errorf("invalid escape sequence")
-					}
-					codePoint = codePoint*16 + rune(digit)
-				}
-				if !isValidUnicodeCodePoint(codePoint) {
-					return nil, c.errorf("invalid escape sequence")
-				}
-				builder.WriteRune(codePoint)
-				c.pos += 10
-			default:
-				// Invalid escape sequence
-				return nil, c.errorf("invalid escape sequence")
 			}
 			continue
 		}
-		builder.WriteByte(ch)
+		rawBuilder.WriteByte(ch)
 		c.pos++
 	}
-	lexical := builder.String()
+	// Unescape using shared function
+	lexical, err := UnescapeString(rawBuilder.String())
+	if err != nil {
+		return nil, c.errorf("%v", err)
+	}
 	c.skipWS()
 	if strings.HasPrefix(c.input[c.pos:], "@") {
 		c.pos++
@@ -936,7 +893,8 @@ func (c *turtleCursor) parseLongLiteral(quoteChar byte) (Term, error) {
 	// Consume the three opening quotes
 	c.pos += 3
 
-	var builder strings.Builder
+	// Collect the raw string content (with escape sequences intact)
+	var rawBuilder strings.Builder
 	for c.pos < len(c.input) {
 		// Check for closing triple quotes
 		if c.pos+2 < len(c.input) &&
@@ -960,111 +918,40 @@ func (c *turtleCursor) parseLongLiteral(quoteChar byte) (Term, error) {
 			// Check if it's escaping the triple quote
 			if next == quoteChar && c.pos+3 < len(c.input) &&
 				c.input[c.pos+2] == quoteChar && c.input[c.pos+3] == quoteChar {
-				// Escaped triple quote - write one quote and skip the escape
-				builder.WriteByte(quoteChar)
+				// Escaped triple quote - write the escape sequence as-is for special handling
+				// We'll handle this after unescaping by replacing \""" with a single quote
+				rawBuilder.WriteByte('\\')
+				rawBuilder.WriteByte(quoteChar)
 				c.pos += 2 // Skip \ and first quote, next iteration will handle the other two
 				continue
 			}
-			// Handle other escape sequences
-			switch next {
-			case 'n':
-				builder.WriteByte('\n')
-				c.pos += 2
-			case 't':
-				builder.WriteByte('\t')
-				c.pos += 2
-			case 'r':
-				builder.WriteByte('\r')
-				c.pos += 2
-			case 'b':
-				builder.WriteByte('\b')
-				c.pos += 2
-			case 'f':
-				builder.WriteByte('\f')
-				c.pos += 2
-			case '"':
-				builder.WriteByte('"')
-				c.pos += 2
-			case '\'':
-				builder.WriteByte('\'')
-				c.pos += 2
-			case '\\':
-				builder.WriteByte('\\')
-				c.pos += 2
-			case 'u':
-				// Unicode escape \uXXXX (allow surrogate pairs)
-				if c.pos+5 >= len(c.input) {
+			// Collect escape sequences as-is for later unescaping
+			rawBuilder.WriteByte(ch)
+			c.pos++
+			rawBuilder.WriteByte(next)
+			c.pos++
+			// For unicode escapes, collect the hex digits
+			if next == 'u' {
+				if c.pos+4 > len(c.input) {
 					return nil, c.errorf("invalid escape sequence")
 				}
-				var codePoint rune
-				for i := 2; i < 6; i++ {
-					hex := c.input[c.pos+i]
-					var digit int
-					if hex >= '0' && hex <= '9' {
-						digit = int(hex - '0')
-					} else if hex >= 'a' && hex <= 'f' {
-						digit = int(hex - 'a' + 10)
-					} else if hex >= 'A' && hex <= 'F' {
-						digit = int(hex - 'A' + 10)
-					} else {
-						return nil, c.errorf("invalid escape sequence")
-					}
-					codePoint = codePoint*16 + rune(digit)
+				for i := 0; i < 4 && c.pos < len(c.input); i++ {
+					rawBuilder.WriteByte(c.input[c.pos])
+					c.pos++
 				}
-				if codePoint >= unicodeSurrogateHighStart && codePoint <= unicodeSurrogateHighEnd {
-					if c.pos+11 >= len(c.input) || c.input[c.pos+6] != '\\' || c.input[c.pos+7] != 'u' {
-						return nil, c.errorf("invalid escape sequence")
-					}
-					low := decodeUChar(c.input[c.pos+8 : c.pos+12])
-					if low < 0 || low < unicodeSurrogateLowStart || low > unicodeSurrogateLowEnd {
-						return nil, c.errorf("invalid escape sequence")
-					}
-					combined := unicodeSurrogateBase + ((codePoint - unicodeSurrogateHighStart) << 10) + (low - unicodeSurrogateLowStart)
-					builder.WriteRune(rune(combined))
-					c.pos += 12
-					continue
-				}
-				if codePoint >= unicodeSurrogateLowStart && codePoint <= unicodeSurrogateLowEnd {
+			} else if next == 'U' {
+				if c.pos+8 > len(c.input) {
 					return nil, c.errorf("invalid escape sequence")
 				}
-				if !isValidUnicodeCodePoint(codePoint) {
-					return nil, c.errorf("invalid escape sequence")
+				for i := 0; i < 8 && c.pos < len(c.input); i++ {
+					rawBuilder.WriteByte(c.input[c.pos])
+					c.pos++
 				}
-				builder.WriteRune(codePoint)
-				c.pos += 6
-			case 'U':
-				// Unicode escape \UXXXXXXXX
-				if c.pos+9 >= len(c.input) {
-					return nil, c.errorf("invalid escape sequence")
-				}
-				var codePoint rune
-				for i := 2; i < 10; i++ {
-					hex := c.input[c.pos+i]
-					var digit int
-					if hex >= '0' && hex <= '9' {
-						digit = int(hex - '0')
-					} else if hex >= 'a' && hex <= 'f' {
-						digit = int(hex - 'a' + 10)
-					} else if hex >= 'A' && hex <= 'F' {
-						digit = int(hex - 'A' + 10)
-					} else {
-						return nil, c.errorf("invalid escape sequence")
-					}
-					codePoint = codePoint*16 + rune(digit)
-				}
-				if !isValidUnicodeCodePoint(codePoint) {
-					return nil, c.errorf("invalid escape sequence")
-				}
-				builder.WriteRune(codePoint)
-				c.pos += 10
-			default:
-				// Invalid escape sequence
-				return nil, c.errorf("invalid escape sequence")
 			}
 			continue
 		}
 
-		builder.WriteByte(ch)
+		rawBuilder.WriteByte(ch)
 		c.pos++
 	}
 
@@ -1072,7 +959,17 @@ func (c *turtleCursor) parseLongLiteral(quoteChar byte) (Term, error) {
 		return nil, c.errorf("unterminated long string literal")
 	}
 
-	lexical := builder.String()
+	// Handle escaped triple quotes specially before unescaping
+	// Replace \""" with a single quote (for """ strings) or \''' with a single quote (for ''' strings)
+	rawContent := rawBuilder.String()
+	escapedTripleQuote := "\\" + string(quoteChar) + string(quoteChar) + string(quoteChar)
+	rawContent = strings.ReplaceAll(rawContent, escapedTripleQuote, string(quoteChar))
+
+	// Unescape using shared function
+	lexical, err := UnescapeString(rawContent)
+	if err != nil {
+		return nil, c.errorf("%v", err)
+	}
 	c.skipWS()
 	if strings.HasPrefix(c.input[c.pos:], "@") {
 		c.pos++
