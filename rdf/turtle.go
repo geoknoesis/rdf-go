@@ -90,10 +90,10 @@ func parseTurtleTripleLineWithOptions(opts TurtleParseOptions, line string) ([]T
 		maxDepth = DefaultMaxDepth
 	}
 	cursor := &turtleCursor{
-		input:                      line,
-		prefixes:                   opts.Prefixes,
-		base:                       opts.BaseIRI,
-		expansionTriples:           []Triple{},
+		input:            line,
+		prefixes:         opts.Prefixes,
+		base:             opts.BaseIRI,
+		expansionTriples: []Triple{},
 		// blankNodeCounter uses zero value (0)
 		allowQuotedTripleStatement: opts.AllowQuoted,
 		debugStatements:            opts.DebugStatements,
@@ -502,24 +502,12 @@ func (c *turtleCursor) parseIRI() (Term, error) {
 				if c.pos+5 >= len(c.input) {
 					return nil, c.errorf("unterminated IRI")
 				}
-				// Validate hex digits
-				for i := 2; i < 6; i++ {
-					hex := c.input[c.pos+i]
-					if !((hex >= '0' && hex <= '9') || (hex >= 'a' && hex <= 'f') || (hex >= 'A' && hex <= 'F')) {
-						return nil, c.errorf("invalid character in IRI")
-					}
-				}
+				// Validate and parse hex digits
 				codePoint := rune(0)
 				for i := 2; i < 6; i++ {
 					hex := c.input[c.pos+i]
-					var digit int
-					if hex >= '0' && hex <= '9' {
-						digit = int(hex - '0')
-					} else if hex >= 'a' && hex <= 'f' {
-						digit = int(hex - 'a' + 10)
-					} else if hex >= 'A' && hex <= 'F' {
-						digit = int(hex - 'A' + 10)
-					} else {
+					digit, ok := parseHexDigit(hex)
+					if !ok {
 						return nil, c.errorf("invalid character in IRI")
 					}
 					codePoint = codePoint*16 + rune(digit)

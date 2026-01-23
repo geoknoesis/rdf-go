@@ -105,25 +105,32 @@ func isValidUnicodeCodePoint(codePoint rune) bool {
 	return true
 }
 
+// parseHexDigit converts a single hex digit byte to its integer value.
+// Returns the digit value and true if valid, or 0 and false if invalid.
+func parseHexDigit(hex byte) (int, bool) {
+	switch {
+	case hex >= '0' && hex <= '9':
+		return int(hex - '0'), true
+	case hex >= 'a' && hex <= 'f':
+		return int(hex-'a') + 10, true
+	case hex >= 'A' && hex <= 'F':
+		return int(hex-'A') + 10, true
+	default:
+		return 0, false
+	}
+}
+
 func decodeUChar(hexStr string) rune {
 	if len(hexStr) != 4 && len(hexStr) != 8 {
 		return -1
 	}
 	var codePoint rune
 	for i := 0; i < len(hexStr); i++ {
-		ch := hexStr[i]
-		var digit rune
-		switch {
-		case ch >= '0' && ch <= '9':
-			digit = rune(ch - '0')
-		case ch >= 'a' && ch <= 'f':
-			digit = rune(ch-'a') + 10
-		case ch >= 'A' && ch <= 'F':
-			digit = rune(ch-'A') + 10
-		default:
+		digit, ok := parseHexDigit(hexStr[i])
+		if !ok {
 			return -1
 		}
-		codePoint = codePoint*16 + digit
+		codePoint = codePoint*16 + rune(digit)
 	}
 	return codePoint
 }
