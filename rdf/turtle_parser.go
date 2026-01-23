@@ -162,12 +162,20 @@ func (p *turtleParser) wrapParseError(statement string, err error) error {
 // This is used for early detection before tokenization. The actual parsing is done by parseDirectiveTokens.
 func (p *turtleParser) isLikelyDirective(line string) bool {
 	line = strings.TrimSpace(line)
-	return strings.HasPrefix(line, "@prefix") ||
-		strings.HasPrefix(strings.ToUpper(line), "PREFIX") ||
-		strings.HasPrefix(line, "@base") ||
-		strings.HasPrefix(strings.ToUpper(line), "BASE") ||
-		strings.HasPrefix(line, "@version") ||
-		strings.HasPrefix(strings.ToUpper(line), "VERSION")
+	if len(line) == 0 {
+		return false
+	}
+	// Check for @-prefixed directives first (most common)
+	if line[0] == '@' {
+		return strings.HasPrefix(line, directiveAtPrefix) ||
+			strings.HasPrefix(line, directiveAtBase) ||
+			strings.HasPrefix(line, directiveAtVersion)
+	}
+	// Check for bare directives (case-insensitive)
+	upper := strings.ToUpper(line)
+	return strings.HasPrefix(upper, directivePrefix) ||
+		strings.HasPrefix(upper, directiveBase) ||
+		strings.HasPrefix(upper, directiveVersion)
 }
 
 func (p *turtleParser) parseDirectiveTokens(tokens []turtleToken) (bool, error) {

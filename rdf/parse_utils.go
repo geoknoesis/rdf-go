@@ -17,6 +17,17 @@ const (
 	unicodeSurrogateBase      = 0x10000
 )
 
+// Directive keywords for Turtle/TriG
+const (
+	directiveAtPrefix  = "@prefix"
+	directivePrefix    = "PREFIX"
+	directiveAtBase    = "@base"
+	directiveBase      = "BASE"
+	directiveAtVersion = "@version"
+	directiveVersion   = "VERSION"
+	directiveGraph     = "GRAPH"
+)
+
 func isHexDigit(ch byte) bool {
 	return (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F')
 }
@@ -208,7 +219,7 @@ func checkDecodeContext(ctx context.Context) error {
 }
 
 func parseAtPrefixDirective(line string, requireTerminator bool) (string, string, bool) {
-	if !strings.HasPrefix(line, "@prefix") {
+	if !strings.HasPrefix(line, directiveAtPrefix) {
 		return "", "", false
 	}
 	parts := strings.Fields(line)
@@ -243,7 +254,7 @@ func parseAtPrefixDirective(line string, requireTerminator bool) (string, string
 }
 
 func parseBarePrefixDirective(line string) (string, string, bool) {
-	if strings.HasPrefix(line, "@") || !strings.HasPrefix(strings.ToUpper(line), "PREFIX") {
+	if strings.HasPrefix(line, "@") || !strings.HasPrefix(strings.ToUpper(line), directivePrefix) {
 		return "", "", false
 	}
 	parts := strings.Fields(line)
@@ -269,14 +280,14 @@ func parseBarePrefixDirective(line string) (string, string, bool) {
 }
 
 func parseVersionDirective(line string) bool {
-	if !strings.HasPrefix(strings.ToLower(line), "version") && !strings.HasPrefix(line, "@version") {
+	if !strings.HasPrefix(strings.ToLower(line), strings.ToLower(directiveVersion)) && !strings.HasPrefix(line, directiveAtVersion) {
 		return false
 	}
 	rest := strings.TrimSpace(line)
-	if strings.HasPrefix(rest, "@version") {
-		rest = strings.TrimSpace(rest[len("@version"):])
+	if strings.HasPrefix(rest, directiveAtVersion) {
+		rest = strings.TrimSpace(rest[len(directiveAtVersion):])
 	} else {
-		rest = strings.TrimSpace(rest[len("version"):])
+		rest = strings.TrimSpace(rest[len(directiveVersion):])
 	}
 	rest = strings.TrimSpace(strings.TrimSuffix(rest, "."))
 	if rest == "" {
@@ -294,10 +305,10 @@ func parseVersionDirective(line string) bool {
 }
 
 func parseAtBaseDirective(line string) (string, bool) {
-	if !strings.HasPrefix(line, "@base") {
+	if !strings.HasPrefix(line, directiveAtBase) {
 		return "", false
 	}
-	rest := strings.TrimSpace(line[len("@base"):])
+	rest := strings.TrimSpace(line[len(directiveAtBase):])
 	if !strings.HasPrefix(rest, "<") {
 		return "", false
 	}
@@ -309,13 +320,13 @@ func parseAtBaseDirective(line string) (string, bool) {
 }
 
 func parseBaseDirective(line string) (string, bool) {
-	if strings.HasPrefix(line, "@") || !strings.HasPrefix(strings.ToUpper(line), "BASE") {
+	if strings.HasPrefix(line, "@") || !strings.HasPrefix(strings.ToUpper(line), directiveBase) {
 		return "", false
 	}
 	if strings.HasSuffix(strings.TrimSpace(line), ".") {
 		return "", false
 	}
-	rest := strings.TrimSpace(line[len("BASE"):])
+	rest := strings.TrimSpace(line[len(directiveBase):])
 	if !strings.HasPrefix(rest, "<") {
 		return "", false
 	}

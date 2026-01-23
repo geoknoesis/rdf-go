@@ -272,8 +272,8 @@ func (d *trigQuadDecoder) parseGraphToken(token string) (Term, error) {
 		return nil, nil
 	}
 	upper := strings.ToUpper(token)
-	if strings.HasPrefix(upper, "GRAPH ") {
-		token = strings.TrimSpace(token[len("GRAPH "):])
+	if strings.HasPrefix(upper, directiveGraph+" ") {
+		token = strings.TrimSpace(token[len(directiveGraph+" "):])
 		if token == "" {
 			return nil, fmt.Errorf("expected graph name")
 		}
