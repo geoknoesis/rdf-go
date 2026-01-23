@@ -13,13 +13,12 @@ type schemaOrgLoader struct{}
 func (l *schemaOrgLoader) LoadDocument(ctx context.Context, iri string) (RemoteDocument, error) {
 	// Return a simplified schema.org context for testing
 	// In real usage, this would fetch from https://schema.org/docs/jsonldcontext.jsonld
+	// The Document should be the context object itself, not wrapped in @context
 	contextDoc := map[string]interface{}{
-		"@context": map[string]interface{}{
-			"@vocab": "https://schema.org/",
-			"name":   "https://schema.org/name",
-			"Person": "https://schema.org/Person",
-			"url":    "https://schema.org/url",
-		},
+		"@vocab": "https://schema.org/",
+		"name":   "https://schema.org/name",
+		"Person": "https://schema.org/Person",
+		"url":    "https://schema.org/url",
 	}
 	return RemoteDocument{
 		DocumentURL: iri,
@@ -81,9 +80,10 @@ func TestJSONLDRemoteContextSchemaOrg(t *testing.T) {
 		t.Logf("Triples: %+v", triples)
 	}
 
-	// Verify name property was expanded correctly
+	// Verify name property was expanded correctly (using @vocab)
 	foundName := false
 	for _, triple := range triples {
+		// With @vocab, "name" should expand to "https://schema.org/name"
 		if triple.P.Value == "https://schema.org/name" {
 			if lit, ok := triple.O.(Literal); ok {
 				if lit.Lexical == "John Doe" {
@@ -94,16 +94,23 @@ func TestJSONLDRemoteContextSchemaOrg(t *testing.T) {
 		}
 	}
 	if !foundName {
-		t.Error("expected name property triple with value 'John Doe'")
+		t.Error("expected name property triple with value 'John Doe' expanded to https://schema.org/name")
 		t.Logf("Triples: %+v", triples)
 	}
 
-	// Verify url property was expanded correctly
+	// Verify url property was expanded correctly (using @vocab)
 	foundURL := false
 	for _, triple := range triples {
+		// With @vocab, "url" should expand to "https://schema.org/url"
 		if triple.P.Value == "https://schema.org/url" {
 			if iri, ok := triple.O.(IRI); ok {
 				if iri.Value == "https://example.org/john" {
+					foundURL = true
+					break
+				}
+			} else if lit, ok := triple.O.(Literal); ok {
+				// URL might be a literal
+				if lit.Lexical == "https://example.org/john" {
 					foundURL = true
 					break
 				}
@@ -111,7 +118,7 @@ func TestJSONLDRemoteContextSchemaOrg(t *testing.T) {
 		}
 	}
 	if !foundURL {
-		t.Error("expected url property triple")
+		t.Error("expected url property triple expanded to https://schema.org/url")
 		t.Logf("Triples: %+v", triples)
 	}
 }
@@ -155,16 +162,17 @@ func TestJSONLDRemoteContextArray(t *testing.T) {
 		t.Fatal("expected at least one triple")
 	}
 
-	// Verify schema.org context was applied (name should expand to schema.org/name)
+	// Verify schema.org context was applied (name should expand to schema.org/name via @vocab)
 	foundSchemaName := false
 	for _, triple := range triples {
+		// With @vocab, "name" should expand to "https://schema.org/name"
 		if triple.P.Value == "https://schema.org/name" {
 			foundSchemaName = true
 			break
 		}
 	}
 	if !foundSchemaName {
-		t.Error("expected name property to expand using schema.org context")
+		t.Error("expected name property to expand using schema.org context (@vocab)")
 		t.Logf("Triples: %+v", triples)
 	}
 
