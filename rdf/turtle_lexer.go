@@ -231,8 +231,16 @@ func (s *turtleScanner) nextToken() (turtleToken, error) {
 		s.pos += 2
 		return turtleToken{Kind: TokDatatypePrefix, Lexeme: "^^"}, nil
 	}
+	// Check for @ but only scan as language tag if it's not a directive
 	if s.input[s.pos] == '@' {
-		return s.scanLangTag()
+		// Check if it's a directive (@prefix, @base, @version) - these are handled by scanWord
+		remaining := s.input[s.pos:]
+		if strings.HasPrefix(remaining, "@prefix") || strings.HasPrefix(remaining, "@base") || strings.HasPrefix(remaining, "@version") {
+			// Let scanWord handle it
+		} else {
+			// It's likely a language tag
+			return s.scanLangTag()
+		}
 	}
 	switch s.input[s.pos] {
 	case lexDot[0]:

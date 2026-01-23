@@ -81,8 +81,14 @@ func (p *turtleParser) NextTriple() (Triple, error) {
 				p.err = token.Err
 				return Triple{}, token.Err
 			case TokLine:
-				if statement.Len() == 0 && p.handleDirective(token.Lexeme) {
-					continue
+				// Quick check: if line looks like a directive, tokenize and parse it
+				if statement.Len() == 0 && p.isLikelyDirective(token.Lexeme) {
+					tokens, err := tokenizeTurtleLine(token.Lexeme)
+					if err == nil {
+						if handled, _ := p.parseDirectiveTokens(tokens); handled {
+							continue
+						}
+					}
 				}
 				if err := p.appendStatementPart(&statement, token.Lexeme); err != nil {
 					p.err = err
@@ -142,37 +148,16 @@ func (p *turtleParser) wrapParseError(statement string, err error) error {
 	return WrapParseError("turtle", "", -1, err)
 }
 
-func (p *turtleParser) parseTripleLine(line string) ([]Triple, error) {
-	debugStatements := p.opts.DebugStatements || (p.opts.AllowEnvOverrides && os.Getenv("TURTLE_DEBUG_STATEMENT") != "")
-	triples, err := parseTurtleTripleLine(p.prefixes, p.baseIRI, p.allowQuotedTripleStatement, debugStatements, line)
-	if err != nil {
-		return nil, p.wrapParseError(line, err)
-	}
-	return triples, nil
-}
-
-func (p *turtleParser) handleDirective(line string) bool {
-	if prefix, iri, ok := parseAtPrefixDirective(line, true); ok {
-		p.prefixes[prefix] = iri
-		return true
-	}
-	if prefix, iri, ok := parseBarePrefixDirective(line); ok {
-		p.prefixes[prefix] = iri
-		return true
-	}
-	if parseVersionDirective(line) {
-		p.allowQuotedTripleStatement = true
-		return true
-	}
-	if iri, ok := parseAtBaseDirective(line); ok {
-		p.baseIRI = iri
-		return true
-	}
-	if iri, ok := parseBaseDirective(line); ok {
-		p.baseIRI = iri
-		return true
-	}
-	return false
+// isLikelyDirective performs a quick string-based check to see if a line might be a directive.
+// This is used for early detection before tokenization. The actual parsing is done by parseDirectiveTokens.
+func (p *turtleParser) isLikelyDirective(line string) bool {
+	line = strings.TrimSpace(line)
+	return strings.HasPrefix(line, "@prefix") ||
+		strings.HasPrefix(strings.ToUpper(line), "PREFIX") ||
+		strings.HasPrefix(line, "@base") ||
+		strings.HasPrefix(strings.ToUpper(line), "BASE") ||
+		strings.HasPrefix(line, "@version") ||
+		strings.HasPrefix(strings.ToUpper(line), "VERSION")
 }
 
 func (p *turtleParser) parseDirectiveTokens(tokens []turtleToken) (bool, error) {
@@ -348,15 +333,24 @@ func (p *turtleParser) parseTermTokens(stream *turtleTokenStream, allowLiteral b
 		return BlankNode{ID: tok.Lexeme[2:]}, nil // Skip "_:"
 	case TokString, TokStringLong:
 		return p.parseLiteralTokens(stream, allowLiteral)
-	case TokInteger, TokDecimal, TokDouble, TokBoolean:
+	case TokInteger, TokDecimal, TokDouble:
 		stream.next()
-		return p.parseTermFromLexeme(tok.Lexeme, allowLiteral)
+		return p.parseNumericLiteralToken(tok)
+	case TokBoolean:
+		stream.next()
+		return p.parseBooleanLiteralToken(tok)
 	case TokLBracket:
 		return p.parseBlankNodePropertyListTokens(stream)
 	case TokLParen:
 		return p.parseCollectionTokens(stream)
 	case TokLDoubleAngle:
 		return p.parseTripleTermTokens(stream)
+	case TokLangTag:
+		// Language tags should only appear after string literals, not as standalone tokens
+		return nil, WrapParseError("turtle", "", -1, fmt.Errorf("unexpected language tag (must follow a string literal)"))
+	case TokDatatypePrefix:
+		// Datatype prefix should only appear after string literals, not as standalone tokens
+		return nil, WrapParseError("turtle", "", -1, fmt.Errorf("unexpected datatype prefix (must follow a string literal)"))
 	default:
 		return nil, WrapParseError("turtle", "", -1, fmt.Errorf("unexpected token: %v", tok.Kind))
 	}
@@ -438,7 +432,7 @@ func (p *turtleParser) parseCollectionTokens(stream *turtleTokenStream) (Term, e
 	// Check for empty collection
 	if stream.peek().Kind == TokRParen {
 		stream.next()
-		return IRI{Value: "http://www.w3.org/1999/02/22-rdf-syntax-ns#nil"}, nil
+		return IRI{Value: rdfNilIRI}, nil
 	}
 
 	var objects []Term
@@ -459,14 +453,14 @@ func (p *turtleParser) parseCollectionTokens(stream *turtleTokenStream) (Term, e
 	}
 
 	if len(objects) == 0 {
-		return IRI{Value: "http://www.w3.org/1999/02/22-rdf-syntax-ns#nil"}, nil
+		return IRI{Value: rdfNilIRI}, nil
 	}
 
 	// Generate rdf:first/rdf:rest triples
 	head := p.newBlankNode()
-	rdfFirst := IRI{Value: "http://www.w3.org/1999/02/22-rdf-syntax-ns#first"}
-	rdfRest := IRI{Value: "http://www.w3.org/1999/02/22-rdf-syntax-ns#rest"}
-	rdfNil := IRI{Value: "http://www.w3.org/1999/02/22-rdf-syntax-ns#nil"}
+	rdfFirst := IRI{Value: rdfFirstIRI}
+	rdfRest := IRI{Value: rdfRestIRI}
+	rdfNil := IRI{Value: rdfNilIRI}
 
 	current := head
 	for i, obj := range objects {
@@ -717,22 +711,38 @@ func (p *turtleParser) unescapeString(s string, quoteChar byte) (string, error) 
 	return builder.String(), nil
 }
 
-func (p *turtleParser) parseTermFromLexeme(lexeme string, allowLiteral bool) (Term, error) {
-	cursor := &turtleCursor{
-		input:                      lexeme,
-		prefixes:                   p.prefixes,
-		base:                       p.baseIRI,
-		allowQuotedTripleStatement: p.allowQuotedTripleStatement,
+func (p *turtleParser) parseNumericLiteralToken(tok turtleToken) (Term, error) {
+	lexical := tok.Lexeme
+	var datatype IRI
+
+	// Determine datatype based on token kind
+	switch tok.Kind {
+	case TokDouble:
+		datatype = IRI{Value: "http://www.w3.org/2001/XMLSchema#double"}
+	case TokDecimal:
+		datatype = IRI{Value: "http://www.w3.org/2001/XMLSchema#decimal"}
+	case TokInteger:
+		datatype = IRI{Value: "http://www.w3.org/2001/XMLSchema#integer"}
+	default:
+		// Fallback: determine from lexical form
+		if strings.Contains(lexical, "e") || strings.Contains(lexical, "E") {
+			datatype = IRI{Value: "http://www.w3.org/2001/XMLSchema#double"}
+		} else if strings.Contains(lexical, ".") {
+			datatype = IRI{Value: "http://www.w3.org/2001/XMLSchema#decimal"}
+		} else {
+			datatype = IRI{Value: "http://www.w3.org/2001/XMLSchema#integer"}
+		}
 	}
-	term, err := cursor.parseTerm(allowLiteral)
-	if err != nil {
-		return nil, err
-	}
-	cursor.skipWS()
-	if cursor.pos != len(cursor.input) {
-		return nil, cursor.errorf("unexpected trailing input")
-	}
-	return term, nil
+
+	return Literal{Lexical: lexical, Datatype: datatype}, nil
+}
+
+func (p *turtleParser) parseBooleanLiteralToken(tok turtleToken) (Term, error) {
+	lexical := tok.Lexeme
+	return Literal{
+		Lexical:  lexical,
+		Datatype: IRI{Value: "http://www.w3.org/2001/XMLSchema#boolean"},
+	}, nil
 }
 
 func (p *turtleParser) parseAnnotationTokens(stream *turtleTokenStream, annotationSubject Term) ([]Triple, error) {

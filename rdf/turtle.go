@@ -1254,7 +1254,7 @@ func (c *turtleCursor) parseCollection() (Term, error) {
 	// Empty collection
 	if c.pos < len(c.input) && c.input[c.pos] == ')' {
 		c.pos++
-		return IRI{Value: "http://www.w3.org/1999/02/22-rdf-syntax-ns#nil"}, nil
+		return IRI{Value: rdfNilIRI}, nil
 	}
 
 	var objects []Term
@@ -1280,14 +1280,14 @@ func (c *turtleCursor) parseCollection() (Term, error) {
 	}
 
 	if len(objects) == 0 {
-		return IRI{Value: "http://www.w3.org/1999/02/22-rdf-syntax-ns#nil"}, nil
+		return IRI{Value: rdfNilIRI}, nil
 	}
 
 	// Generate rdf:first/rdf:rest triples
 	head := c.newBlankNode()
-	rdfFirst := IRI{Value: "http://www.w3.org/1999/02/22-rdf-syntax-ns#first"}
-	rdfRest := IRI{Value: "http://www.w3.org/1999/02/22-rdf-syntax-ns#rest"}
-	rdfNil := IRI{Value: "http://www.w3.org/1999/02/22-rdf-syntax-ns#nil"}
+	rdfFirst := IRI{Value: rdfFirstIRI}
+	rdfRest := IRI{Value: rdfRestIRI}
+	rdfNil := IRI{Value: rdfNilIRI}
 
 	current := head
 	for i, obj := range objects {
