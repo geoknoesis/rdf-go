@@ -2,49 +2,73 @@ package rdf
 
 import "io"
 
-// Encoder streams RDF quads to an output.
-type Encoder interface {
+// TripleEncoder streams RDF triples to an output.
+type TripleEncoder interface {
+	Write(Triple) error
+	Flush() error
+	Close() error
+}
+
+// QuadEncoder streams RDF quads to an output.
+type QuadEncoder interface {
 	Write(Quad) error
 	Flush() error
 	Close() error
 }
 
-// NewDecoder creates a decoder for the given format.
-func NewDecoder(r io.Reader, format Format) (Decoder, error) {
+// NewTripleDecoder creates a decoder for triple-only formats.
+func NewTripleDecoder(r io.Reader, format TripleFormat) (TripleDecoder, error) {
 	switch format {
-	case FormatNTriples:
-		return newNTriplesDecoder(r), nil
-	case FormatNQuads:
-		return newNQuadsDecoder(r), nil
-	case FormatTurtle:
-		return newTurtleDecoder(r), nil
-	case FormatTriG:
-		return newTriGDecoder(r), nil
-	case FormatRDFXML:
-		return newRDFXMLDecoder(r), nil
-	case FormatJSONLD:
-		return newJSONLDDecoder(r), nil
+	case TripleFormatTurtle:
+		return newTurtleTripleDecoder(r), nil
+	case TripleFormatNTriples:
+		return newNTriplesTripleDecoder(r), nil
+	case TripleFormatRDFXML:
+		return newRDFXMLTripleDecoder(r), nil
+	case TripleFormatJSONLD:
+		return newJSONLDTripleDecoder(r), nil
 	default:
 		return nil, ErrUnsupportedFormat
 	}
 }
 
-// NewEncoder creates an encoder for the given format.
-func NewEncoder(w io.Writer, format Format) (Encoder, error) {
+// NewQuadDecoder creates a decoder for quad-capable formats.
+func NewQuadDecoder(r io.Reader, format QuadFormat) (QuadDecoder, error) {
 	switch format {
-	case FormatNTriples:
-		return newNTriplesEncoder(w), nil
-	case FormatNQuads:
-		return newNQuadsEncoder(w), nil
-	case FormatTurtle:
-		return newTurtleEncoder(w), nil
-	case FormatTriG:
-		return newTriGEncoder(w), nil
-	case FormatRDFXML:
-		return newRDFXMLEncoder(w), nil
-	case FormatJSONLD:
-		return newJSONLDEncoder(w), nil
+	case QuadFormatTriG:
+		return newTriGQuadDecoder(r), nil
+	case QuadFormatNQuads:
+		return newNQuadsQuadDecoder(r), nil
 	default:
 		return nil, ErrUnsupportedFormat
 	}
 }
+
+// NewTripleEncoder creates an encoder for triple-only formats.
+func NewTripleEncoder(w io.Writer, format TripleFormat) (TripleEncoder, error) {
+	switch format {
+	case TripleFormatTurtle:
+		return newTurtleTripleEncoder(w), nil
+	case TripleFormatNTriples:
+		return newNTriplesTripleEncoder(w), nil
+	case TripleFormatRDFXML:
+		return newRDFXMLTripleEncoder(w), nil
+	case TripleFormatJSONLD:
+		return newJSONLDTripleEncoder(w), nil
+	default:
+		return nil, ErrUnsupportedFormat
+	}
+}
+
+// NewQuadEncoder creates an encoder for quad-capable formats.
+func NewQuadEncoder(w io.Writer, format QuadFormat) (QuadEncoder, error) {
+	switch format {
+	case QuadFormatTriG:
+		return newTriGQuadEncoder(w), nil
+	case QuadFormatNQuads:
+		return newNQuadsQuadEncoder(w), nil
+	default:
+		return nil, ErrUnsupportedFormat
+	}
+}
+

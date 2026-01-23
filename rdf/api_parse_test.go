@@ -6,13 +6,13 @@ import (
 	"testing"
 )
 
-func TestParseAndParseChan(t *testing.T) {
+func TestParseTriplesAndParseTriplesChan(t *testing.T) {
 	input := "<http://example.org/s> <http://example.org/p> \"v\" .\n"
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	count := 0
-	err := Parse(ctx, strings.NewReader(input), FormatNTriples, HandlerFunc(func(q Quad) error {
+	err := ParseTriples(ctx, strings.NewReader(input), TripleFormatNTriples, TripleHandlerFunc(func(t Triple) error {
 		count++
 		cancel()
 		return nil
@@ -21,10 +21,10 @@ func TestParseAndParseChan(t *testing.T) {
 		t.Fatalf("expected context canceled, got %v", err)
 	}
 	if count != 1 {
-		t.Fatalf("expected 1 quad, got %d", count)
+		t.Fatalf("expected 1 triple, got %d", count)
 	}
 
-	out, errs := ParseChan(context.Background(), strings.NewReader(input), FormatNTriples)
+	out, errs := ParseTriplesChan(context.Background(), strings.NewReader(input), TripleFormatNTriples)
 	select {
 	case err := <-errs:
 		if err != nil {
@@ -34,9 +34,9 @@ func TestParseAndParseChan(t *testing.T) {
 	}
 }
 
-func TestParseHandlerError(t *testing.T) {
+func TestParseTriplesHandlerError(t *testing.T) {
 	input := "<http://example.org/s> <http://example.org/p> \"v\" .\n"
-	err := Parse(context.Background(), strings.NewReader(input), FormatNTriples, HandlerFunc(func(q Quad) error {
+	err := ParseTriples(context.Background(), strings.NewReader(input), TripleFormatNTriples, TripleHandlerFunc(func(t Triple) error {
 		return ErrUnsupportedFormat
 	}))
 	if err != ErrUnsupportedFormat {

@@ -2,33 +2,53 @@ package rdf
 
 import "strings"
 
-// Format identifies RDF serialization formats.
-type Format string
+// TripleFormat represents RDF formats that only support triples.
+type TripleFormat string
 
 const (
-	FormatTurtle   Format = "turtle"
-	FormatTriG     Format = "trig"
-	FormatNTriples Format = "ntriples"
-	FormatNQuads   Format = "nquads"
-	FormatRDFXML   Format = "rdfxml"
-	FormatJSONLD   Format = "jsonld"
+	// TripleFormatTurtle is the Turtle format.
+	TripleFormatTurtle TripleFormat = "turtle"
+	// TripleFormatNTriples is the N-Triples format.
+	TripleFormatNTriples TripleFormat = "ntriples"
+	// TripleFormatRDFXML is the RDF/XML format.
+	TripleFormatRDFXML TripleFormat = "rdfxml"
+	// TripleFormatJSONLD is the JSON-LD format.
+	TripleFormatJSONLD TripleFormat = "jsonld"
 )
 
-// ParseFormat normalizes a format string.
-func ParseFormat(value string) (Format, bool) {
+// QuadFormat represents RDF formats that support quads (named graphs).
+type QuadFormat string
+
+const (
+	// QuadFormatTriG is the TriG format.
+	QuadFormatTriG QuadFormat = "trig"
+	// QuadFormatNQuads is the N-Quads format.
+	QuadFormatNQuads QuadFormat = "nquads"
+)
+
+// ParseTripleFormat normalizes a format string and returns a TripleFormat if valid.
+func ParseTripleFormat(value string) (TripleFormat, bool) {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "turtle", "ttl":
-		return FormatTurtle, true
-	case "trig":
-		return FormatTriG, true
+		return TripleFormatTurtle, true
 	case "ntriples", "nt":
-		return FormatNTriples, true
-	case "nquads", "nq":
-		return FormatNQuads, true
+		return TripleFormatNTriples, true
 	case "rdfxml", "rdf", "xml":
-		return FormatRDFXML, true
+		return TripleFormatRDFXML, true
 	case "jsonld", "json-ld", "json":
-		return FormatJSONLD, true
+		return TripleFormatJSONLD, true
+	default:
+		return "", false
+	}
+}
+
+// ParseQuadFormat normalizes a format string and returns a QuadFormat if valid.
+func ParseQuadFormat(value string) (QuadFormat, bool) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "trig":
+		return QuadFormatTriG, true
+	case "nquads", "nq":
+		return QuadFormatNQuads, true
 	default:
 		return "", false
 	}

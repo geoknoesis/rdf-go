@@ -31,23 +31,23 @@ import (
 func main() {
     input := `<http://example.org/s> <http://example.org/p> "v" .`
     
-    dec, err := rdf.NewDecoder(strings.NewReader(input), rdf.FormatNTriples)
+    dec, err := rdf.NewTripleDecoder(strings.NewReader(input), rdf.TripleFormatNTriples)
     if err != nil {
         panic(err)
     }
     defer dec.Close()
 
     for {
-        quad, err := dec.Next()
+        triple, err := dec.Next()
         if err == io.EOF {
             break
         }
         if err != nil {
             panic(err)
         }
-        fmt.Printf("Subject: %s\n", quad.S.String())
-        fmt.Printf("Predicate: %s\n", quad.P.String())
-        fmt.Printf("Object: %s\n", quad.O.String())
+        fmt.Printf("Subject: %s\n", triple.S.String())
+        fmt.Printf("Predicate: %s\n", triple.P.String())
+        fmt.Printf("Object: %s\n", triple.O.String())
     }
 }
 ```
@@ -68,19 +68,19 @@ import (
 func main() {
     var buf bytes.Buffer
     
-    enc, err := rdf.NewEncoder(&buf, rdf.FormatNTriples)
+    enc, err := rdf.NewTripleEncoder(&buf, rdf.TripleFormatNTriples)
     if err != nil {
         panic(err)
     }
     defer enc.Close()
 
-    quad := rdf.Quad{
+    triple := rdf.Triple{
         S: rdf.IRI{Value: "http://example.org/s"},
         P: rdf.IRI{Value: "http://example.org/p"},
         O: rdf.Literal{Lexical: "v"},
     }
     
-    if err := enc.Write(quad); err != nil {
+    if err := enc.Write(triple); err != nil {
         panic(err)
     }
     
@@ -95,22 +95,33 @@ func main() {
 
 ## Choosing a Format
 
-The library supports multiple RDF formats. You can specify the format when creating a decoder or encoder:
+The library supports multiple RDF formats, separated into triple-only and quad formats:
 
+**Triple formats** (use with `NewTripleDecoder`/`NewTripleEncoder`):
 ```go
-// Supported formats
-rdf.FormatTurtle    // Turtle (.ttl)
-rdf.FormatTriG      // TriG (.trig)
-rdf.FormatNTriples  // N-Triples (.nt)
-rdf.FormatNQuads     // N-Quads (.nq)
-rdf.FormatRDFXML     // RDF/XML (.rdf, .xml)
-rdf.FormatJSONLD     // JSON-LD (.jsonld)
+rdf.TripleFormatTurtle    // Turtle (.ttl)
+rdf.TripleFormatNTriples  // N-Triples (.nt)
+rdf.TripleFormatRDFXML    // RDF/XML (.rdf, .xml)
+rdf.TripleFormatJSONLD    // JSON-LD (.jsonld)
+```
+
+**Quad formats** (use with `NewQuadDecoder`/`NewQuadEncoder`):
+```go
+rdf.QuadFormatTriG   // TriG (.trig)
+rdf.QuadFormatNQuads // N-Quads (.nq)
 ```
 
 You can also parse format strings:
 
 ```go
-format, ok := rdf.ParseFormat("ttl")
+// For triple formats
+format, ok := rdf.ParseTripleFormat("ttl")
+if !ok {
+    // format not recognized
+}
+
+// For quad formats
+format, ok := rdf.ParseQuadFormat("nq")
 if !ok {
     // format not recognized
 }

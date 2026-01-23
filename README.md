@@ -4,26 +4,56 @@
 APIs and RDF-star support. It is designed for low allocations and for use
 in pipelines where RDF data should be processed incrementally.
 
+## Author
+
+**Stephane Fellah** - stephanef@geoknoesis.com  
+Geosemantic-AI expert with 30 years of experience
+
+Published by **Geoknoesis LLC** - www.geoknoesis.com
+
 ## Features
 
 - Streaming decoders (pull style) and encoders (push style).
-- Convenience helpers: `Parse` and `ParseChan`.
+- Type-safe API: separate triple and quad decoders/encoders.
+- Convenience helpers: `ParseTriples`, `ParseQuads`, `ParseTriplesChan`, `ParseQuadsChan`.
 - RDF-star via `TripleTerm` values.
 - Multiple formats: Turtle, TriG, N-Triples, N-Quads, RDF/XML, JSON-LD.
 
 ## Install
 
 ```
-go get grit/rdf-go
+go get github.com/geoknoesis/rdf-go
 ```
 
 ## Quick Start
 
-### Decode (pull)
+### Decode Triples (pull)
 
 ```go
 input := `<http://example.org/s> <http://example.org/p> "v" .`
-dec, err := rdf.NewDecoder(strings.NewReader(input), rdf.FormatNTriples)
+dec, err := rdf.NewTripleDecoder(strings.NewReader(input), rdf.TripleFormatNTriples)
+if err != nil {
+    // handle error
+}
+defer dec.Close()
+
+for {
+    triple, err := dec.Next()
+    if err == io.EOF {
+        break
+    }
+    if err != nil {
+        // handle error
+    }
+    // use triple.S / triple.P / triple.O
+}
+```
+
+### Decode Quads (pull)
+
+```go
+input := `<http://example.org/s> <http://example.org/p> "v" <http://example.org/g> .`
+dec, err := rdf.NewQuadDecoder(strings.NewReader(input), rdf.QuadFormatNQuads)
 if err != nil {
     // handle error
 }
@@ -41,11 +71,29 @@ for {
 }
 ```
 
-### Encode (push)
+### Encode Triples (push)
 
 ```go
 buf := &bytes.Buffer{}
-enc, err := rdf.NewEncoder(buf, rdf.FormatNTriples)
+enc, err := rdf.NewTripleEncoder(buf, rdf.TripleFormatNTriples)
+if err != nil {
+    // handle error
+}
+defer enc.Close()
+
+_ = enc.Write(rdf.Triple{
+    S: rdf.IRI{Value: "http://example.org/s"},
+    P: rdf.IRI{Value: "http://example.org/p"},
+    O: rdf.Literal{Lexical: "v"},
+})
+_ = enc.Flush()
+```
+
+### Encode Quads (push)
+
+```go
+buf := &bytes.Buffer{}
+enc, err := rdf.NewQuadEncoder(buf, rdf.QuadFormatNQuads)
 if err != nil {
     // handle error
 }
@@ -55,28 +103,41 @@ _ = enc.Write(rdf.Quad{
     S: rdf.IRI{Value: "http://example.org/s"},
     P: rdf.IRI{Value: "http://example.org/p"},
     O: rdf.Literal{Lexical: "v"},
+    G: rdf.IRI{Value: "http://example.org/g"},
 })
 _ = enc.Flush()
 ```
 
-### Parse (handler)
+### Parse Triples (handler)
 
 ```go
 count := 0
-err := rdf.Parse(context.Background(), strings.NewReader(input), rdf.FormatNTriples,
-    rdf.HandlerFunc(func(q rdf.Quad) error {
+err := rdf.ParseTriples(context.Background(), strings.NewReader(input), rdf.TripleFormatNTriples,
+    rdf.TripleHandlerFunc(func(t rdf.Triple) error {
         count++
         return nil
     }),
 )
 ```
 
-### ParseChan (channel)
+### ParseQuads (handler)
 
 ```go
-out, errs := rdf.ParseChan(context.Background(), strings.NewReader(input), rdf.FormatNTriples)
-for q := range out {
-    _ = q
+count := 0
+err := rdf.ParseQuads(context.Background(), strings.NewReader(input), rdf.QuadFormatNQuads,
+    rdf.QuadHandlerFunc(func(q rdf.Quad) error {
+        count++
+        return nil
+    }),
+)
+```
+
+### ParseTriplesChan (channel)
+
+```go
+out, errs := rdf.ParseTriplesChan(context.Background(), strings.NewReader(input), rdf.TripleFormatNTriples)
+for t := range out {
+    _ = t
 }
 if err, ok := <-errs; ok && err != nil {
     // handle error
@@ -93,7 +154,7 @@ quoted := rdf.TripleTerm{
     P: rdf.IRI{Value: "http://example.org/p"},
     O: rdf.IRI{Value: "http://example.org/o"},
 }
-stmt := rdf.Quad{
+stmt := rdf.Triple{
     S: quoted,
     P: rdf.IRI{Value: "http://example.org/said"},
     O: rdf.Literal{Lexical: "true"},
@@ -102,17 +163,40 @@ stmt := rdf.Quad{
 
 ## Format Selection
 
+The library provides separate format types for triple-only and quad formats:
+
 ```go
-format, ok := rdf.ParseFormat("nt")
+// For triple formats (Turtle, N-Triples, RDF/XML, JSON-LD)
+format, ok := rdf.ParseTripleFormat("nt")
+if !ok {
+    // fallback
+}
+
+// For quad formats (TriG, N-Quads)
+format, ok := rdf.ParseQuadFormat("nq")
 if !ok {
     // fallback
 }
 ```
 
+## Supported Formats
+
+**Triple formats:**
+- `rdf.TripleFormatTurtle` - Turtle (.ttl)
+- `rdf.TripleFormatNTriples` - N-Triples (.nt)
+- `rdf.TripleFormatRDFXML` - RDF/XML (.rdf, .xml)
+- `rdf.TripleFormatJSONLD` - JSON-LD (.jsonld)
+
+**Quad formats:**
+- `rdf.QuadFormatTriG` - TriG (.trig)
+- `rdf.QuadFormatNQuads` - N-Quads (.nq)
+
 ## Notes
 
 - The API is intentionally small and favors streaming. For large inputs,
-  prefer `NewDecoder` or `Parse` instead of buffering all results.
-- For any format that is not supported, `NewDecoder`/`NewEncoder` returns
+  prefer `NewTripleDecoder`/`NewQuadDecoder` or `ParseTriples`/`ParseQuads` instead of buffering all results.
+- The API enforces type safety: triple formats can only be used with triple decoders/encoders,
+  and quad formats can only be used with quad decoders/encoders.
+- For any format that is not supported, `NewTripleDecoder`/`NewQuadDecoder`/`NewTripleEncoder`/`NewQuadEncoder` returns
   `rdf.ErrUnsupportedFormat`.
 

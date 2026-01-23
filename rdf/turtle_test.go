@@ -7,43 +7,55 @@ import (
 
 func TestTurtleDirectiveAndPrefixedName(t *testing.T) {
 	input := "@prefix ex: <http://example.org/> .\nex:s ex:p \"v\" .\n"
-	dec := newTurtleDecoder(strings.NewReader(input))
-	quad, err := dec.Next()
+	dec, err := NewTripleDecoder(strings.NewReader(input), TripleFormatTurtle)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if quad.P.Value != "http://example.org/p" {
-		t.Fatalf("unexpected predicate: %s", quad.P.Value)
+	triple, err := dec.Next()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if triple.P.Value != "http://example.org/p" {
+		t.Fatalf("unexpected predicate: %s", triple.P.Value)
 	}
 }
 
 func TestTurtleBaseIRI(t *testing.T) {
 	input := "@base <http://example.org/> .\n<rel> <http://example.org/p> <http://example.org/o> .\n"
-	dec := newTurtleDecoder(strings.NewReader(input))
-	quad, err := dec.Next()
+	dec, err := NewTripleDecoder(strings.NewReader(input), TripleFormatTurtle)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if iri, ok := quad.S.(IRI); !ok || iri.Value != "http://example.org/rel" {
-		t.Fatalf("unexpected base IRI resolution: %#v", quad.S)
+	triple, err := dec.Next()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if iri, ok := triple.S.(IRI); !ok || iri.Value != "http://example.org/rel" {
+		t.Fatalf("unexpected base IRI resolution: %#v", triple.S)
 	}
 }
 
 func TestTurtleTripleTerm(t *testing.T) {
 	input := "<< <http://example.org/s> <http://example.org/p> <http://example.org/o> >> <http://example.org/p2> <http://example.org/o2> .\n"
-	dec := newTurtleDecoder(strings.NewReader(input))
-	quad, err := dec.Next()
+	dec, err := NewTripleDecoder(strings.NewReader(input), TripleFormatTurtle)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if _, ok := quad.S.(TripleTerm); !ok {
+	triple, err := dec.Next()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, ok := triple.S.(TripleTerm); !ok {
 		t.Fatalf("expected triple term")
 	}
 }
 
 func TestTurtleInvalidPredicate(t *testing.T) {
 	input := "_:b1 \"literal\" <http://example.org/o> .\n"
-	dec := newTurtleDecoder(strings.NewReader(input))
+	dec, err := NewTripleDecoder(strings.NewReader(input), TripleFormatTurtle)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if _, err := dec.Next(); err == nil {
 		t.Fatal("expected predicate error")
 	}
@@ -51,7 +63,10 @@ func TestTurtleInvalidPredicate(t *testing.T) {
 
 func TestTurtleUnknownPrefix(t *testing.T) {
 	input := "ex:s ex:p ex:o .\n"
-	dec := newTurtleDecoder(strings.NewReader(input))
+	dec, err := NewTripleDecoder(strings.NewReader(input), TripleFormatTurtle)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if _, err := dec.Next(); err == nil {
 		t.Fatal("expected unknown prefix error")
 	}
@@ -59,7 +74,10 @@ func TestTurtleUnknownPrefix(t *testing.T) {
 
 func TestTriGGraphBlock(t *testing.T) {
 	input := "@prefix ex: <http://example.org/> .\nex:g { ex:s ex:p ex:o . }\n"
-	dec := newTriGDecoder(strings.NewReader(input))
+	dec, err := NewQuadDecoder(strings.NewReader(input), QuadFormatTriG)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	quad, err := dec.Next()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -71,31 +89,40 @@ func TestTriGGraphBlock(t *testing.T) {
 
 func TestTurtleLiteralDatatype(t *testing.T) {
 	input := "@prefix ex: <http://example.org/> .\nex:s ex:p \"1\"^^ex:dt .\n"
-	dec := newTurtleDecoder(strings.NewReader(input))
-	quad, err := dec.Next()
+	dec, err := NewTripleDecoder(strings.NewReader(input), TripleFormatTurtle)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if lit, ok := quad.O.(Literal); !ok || lit.Datatype.Value != "http://example.org/dt" {
+	triple, err := dec.Next()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if lit, ok := triple.O.(Literal); !ok || lit.Datatype.Value != "http://example.org/dt" {
 		t.Fatalf("expected datatype literal")
 	}
 }
 
 func TestTurtleLangLiteral(t *testing.T) {
 	input := "@prefix ex: <http://example.org/> .\nex:s ex:p \"hello\"@en .\n"
-	dec := newTurtleDecoder(strings.NewReader(input))
-	quad, err := dec.Next()
+	dec, err := NewTripleDecoder(strings.NewReader(input), TripleFormatTurtle)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if lit, ok := quad.O.(Literal); !ok || lit.Lang != "en" {
+	triple, err := dec.Next()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if lit, ok := triple.O.(Literal); !ok || lit.Lang != "en" {
 		t.Fatalf("expected lang literal")
 	}
 }
 
 func TestTurtleBadTripleTerm(t *testing.T) {
 	input := "<< <http://example.org/s> <http://example.org/p> <http://example.org/o> <http://example.org/p2> <http://example.org/o2> .\n"
-	dec := newTurtleDecoder(strings.NewReader(input))
+	dec, err := NewTripleDecoder(strings.NewReader(input), TripleFormatTurtle)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if _, err := dec.Next(); err == nil {
 		t.Fatal("expected triple term error")
 	}

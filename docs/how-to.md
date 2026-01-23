@@ -1,6 +1,6 @@
 # How To
 
-This guide covers common tasks and patterns when working with `grit/rdf-go`.
+This guide covers common tasks and patterns when working with `rdf-go`.
 
 ## Parse RDF from a File
 
@@ -16,27 +16,27 @@ if err != nil {
 }
 defer file.Close()
 
-dec, err := rdf.NewDecoder(file, rdf.FormatTurtle)
+dec, err := rdf.NewTripleDecoder(file, rdf.TripleFormatTurtle)
 if err != nil {
     return err
 }
 defer dec.Close()
 
 for {
-    quad, err := dec.Next()
+    triple, err := dec.Next()
     if err == io.EOF {
         break
     }
     if err != nil {
         return err
     }
-    // process quad
+    // process triple
 }
 ```
 
-## Use the Parse Helper
+## Use the ParseTriples Helper
 
-The `Parse` function provides a convenient way to process RDF with a handler function:
+The `ParseTriples` function provides a convenient way to process RDF triples with a handler function:
 
 ```go
 import (
@@ -48,17 +48,39 @@ import (
 input := `<http://example.org/s> <http://example.org/p> "v" .`
 
 count := 0
-err := rdf.Parse(context.Background(), strings.NewReader(input), rdf.FormatNTriples,
-    rdf.HandlerFunc(func(q rdf.Quad) error {
+err := rdf.ParseTriples(context.Background(), strings.NewReader(input), rdf.TripleFormatNTriples,
+    rdf.TripleHandlerFunc(func(t rdf.Triple) error {
         count++
         return nil
     }),
 )
 ```
 
-## Use ParseChan for Concurrent Processing
+## Use ParseQuads Helper
 
-`ParseChan` returns channels that can be used with goroutines:
+The `ParseQuads` function provides a convenient way to process RDF quads with a handler function:
+
+```go
+import (
+    "context"
+    "strings"
+    "github.com/geoknoesis/rdf-go"
+)
+
+input := `<http://example.org/s> <http://example.org/p> "v" <http://example.org/g> .`
+
+count := 0
+err := rdf.ParseQuads(context.Background(), strings.NewReader(input), rdf.QuadFormatNQuads,
+    rdf.QuadHandlerFunc(func(q rdf.Quad) error {
+        count++
+        return nil
+    }),
+)
+```
+
+## Use ParseTriplesChan for Concurrent Processing
+
+`ParseTriplesChan` returns channels that can be used with goroutines:
 
 ```go
 import (
@@ -69,7 +91,35 @@ import (
 
 input := `<http://example.org/s> <http://example.org/p> "v" .`
 
-out, errs := rdf.ParseChan(context.Background(), strings.NewReader(input), rdf.FormatNTriples)
+out, errs := rdf.ParseTriplesChan(context.Background(), strings.NewReader(input), rdf.TripleFormatNTriples)
+
+// Process triples in a goroutine
+go func() {
+    for t := range out {
+        // process triple
+    }
+}()
+
+// Check for errors
+if err, ok := <-errs; ok && err != nil {
+    // handle error
+}
+```
+
+## Use ParseQuadsChan for Concurrent Processing
+
+`ParseQuadsChan` returns channels that can be used with goroutines:
+
+```go
+import (
+    "context"
+    "strings"
+    "github.com/geoknoesis/rdf-go"
+)
+
+input := `<http://example.org/s> <http://example.org/p> "v" <http://example.org/g> .`
+
+out, errs := rdf.ParseQuadsChan(context.Background(), strings.NewReader(input), rdf.QuadFormatNQuads)
 
 // Process quads in a goroutine
 go func() {
@@ -93,16 +143,16 @@ import (
     "github.com/geoknoesis/rdf-go"
 )
 
-// Read from one format
-dec, err := rdf.NewDecoder(inputReader, rdf.FormatTurtle)
+// Read from one format (triple format)
+dec, err := rdf.NewTripleDecoder(inputReader, rdf.TripleFormatTurtle)
 if err != nil {
     return err
 }
 defer dec.Close()
 
-// Write to another format
+// Write to another format (triple format)
 var buf bytes.Buffer
-enc, err := rdf.NewEncoder(&buf, rdf.FormatNTriples)
+enc, err := rdf.NewTripleEncoder(&buf, rdf.TripleFormatNTriples)
 if err != nil {
     return err
 }
@@ -110,14 +160,14 @@ defer enc.Close()
 
 // Stream conversion
 for {
-    quad, err := dec.Next()
+    triple, err := dec.Next()
     if err == io.EOF {
         break
     }
     if err != nil {
         return err
     }
-    if err := enc.Write(quad); err != nil {
+    if err := enc.Write(triple); err != nil {
         return err
     }
 }
@@ -127,13 +177,29 @@ if err := enc.Flush(); err != nil {
 }
 ```
 
+## Filter Triples
+
+You can filter triples during parsing:
+
+```go
+err := rdf.ParseTriples(context.Background(), reader, rdf.TripleFormatTurtle,
+    rdf.TripleHandlerFunc(func(t rdf.Triple) error {
+        // Only process triples with a specific predicate
+        if t.P.Value == "http://example.org/name" {
+            // process triple
+        }
+        return nil
+    }),
+)
+```
+
 ## Filter Quads
 
 You can filter quads during parsing:
 
 ```go
-err := rdf.Parse(context.Background(), reader, rdf.FormatTurtle,
-    rdf.HandlerFunc(func(q rdf.Quad) error {
+err := rdf.ParseQuads(context.Background(), reader, rdf.QuadFormatTriG,
+    rdf.QuadHandlerFunc(func(q rdf.Quad) error {
         // Only process quads with a specific predicate
         if q.P.Value == "http://example.org/name" {
             // process quad
@@ -146,7 +212,7 @@ err := rdf.Parse(context.Background(), reader, rdf.FormatTurtle,
 ## Handle Errors Gracefully
 
 ```go
-dec, err := rdf.NewDecoder(reader, rdf.FormatTurtle)
+dec, err := rdf.NewTripleDecoder(reader, rdf.TripleFormatTurtle)
 if err != nil {
     if err == rdf.ErrUnsupportedFormat {
         // handle unsupported format
@@ -156,23 +222,23 @@ if err != nil {
 defer dec.Close()
 
 for {
-    quad, err := dec.Next()
+    triple, err := dec.Next()
     if err == io.EOF {
         break
     }
     if err != nil {
         // Log error but continue processing if possible
-        log.Printf("Error reading quad: %v", err)
+        log.Printf("Error reading triple: %v", err)
         continue
     }
-    // process quad
+    // process triple
 }
 ```
 
 ## Work with Named Graphs
 
 ```go
-dec, err := rdf.NewDecoder(reader, rdf.FormatTriG)
+dec, err := rdf.NewQuadDecoder(reader, rdf.QuadFormatTriG)
 if err != nil {
     return err
 }
@@ -207,14 +273,14 @@ quoted := rdf.TripleTerm{
 }
 
 // Use it as a subject
-stmt := rdf.Quad{
+stmt := rdf.Triple{
     S: quoted,
     P: rdf.IRI{Value: "http://example.org/asserted"},
     O: rdf.Literal{Lexical: "true"},
 }
 
 // Encode it
-enc, _ := rdf.NewEncoder(&buf, rdf.FormatTurtle)
+enc, _ := rdf.NewTripleEncoder(&buf, rdf.TripleFormatTurtle)
 _ = enc.Write(stmt)
 _ = enc.Close()
 ```
@@ -243,19 +309,27 @@ func processTerm(term rdf.Term) {
 ## Parse Format from String
 
 ```go
-// Parse format from user input or file extension
-format, ok := rdf.ParseFormat("ttl")
+// Parse triple format from user input or file extension
+format, ok := rdf.ParseTripleFormat("ttl")
 if !ok {
     // handle unknown format
 }
 
-// Common aliases:
-// "turtle", "ttl" -> FormatTurtle
-// "trig" -> FormatTriG
-// "ntriples", "nt" -> FormatNTriples
-// "nquads", "nq" -> FormatNQuads
-// "rdfxml", "rdf", "xml" -> FormatRDFXML
-// "jsonld", "json-ld", "json" -> FormatJSONLD
+// Triple format aliases:
+// "turtle", "ttl" -> TripleFormatTurtle
+// "ntriples", "nt" -> TripleFormatNTriples
+// "rdfxml", "rdf", "xml" -> TripleFormatRDFXML
+// "jsonld", "json-ld", "json" -> TripleFormatJSONLD
+
+// Parse quad format from user input or file extension
+format, ok := rdf.ParseQuadFormat("nq")
+if !ok {
+    // handle unknown format
+}
+
+// Quad format aliases:
+// "trig" -> QuadFormatTriG
+// "nquads", "nq" -> QuadFormatNQuads
 ```
 
 ## Batch Processing
@@ -264,10 +338,34 @@ For efficient batch processing, use buffering:
 
 ```go
 const batchSize = 1000
+batch := make([]rdf.Triple, 0, batchSize)
+
+err := rdf.ParseTriples(context.Background(), reader, rdf.TripleFormatTurtle,
+    rdf.TripleHandlerFunc(func(t rdf.Triple) error {
+        batch = append(batch, t)
+        if len(batch) >= batchSize {
+            // process batch
+            processBatch(batch)
+            batch = batch[:0] // reset slice
+        }
+        return nil
+    }),
+)
+
+// Process remaining triples
+if len(batch) > 0 {
+    processBatch(batch)
+}
+```
+
+For quads:
+
+```go
+const batchSize = 1000
 batch := make([]rdf.Quad, 0, batchSize)
 
-err := rdf.Parse(context.Background(), reader, rdf.FormatTurtle,
-    rdf.HandlerFunc(func(q rdf.Quad) error {
+err := rdf.ParseQuads(context.Background(), reader, rdf.QuadFormatTriG,
+    rdf.QuadHandlerFunc(func(q rdf.Quad) error {
         batch = append(batch, q)
         if len(batch) >= batchSize {
             // process batch

@@ -1,6 +1,6 @@
 # Concepts
 
-This document explains the core concepts in `grit/rdf-go`, including RDF terms, triples, quads, and how they're represented in the library.
+This document explains the core concepts in `rdf-go`, including RDF terms, triples, quads, and how they're represented in the library.
 
 ## RDF Terms
 
@@ -59,7 +59,7 @@ quoted := rdf.TripleTerm{
 }
 
 // Use the quoted triple as a subject
-stmt := rdf.Quad{
+stmt := rdf.Triple{
     S: quoted,
     P: rdf.IRI{Value: "http://example.org/asserted"},
     O: rdf.Literal{Lexical: "true"},
@@ -127,14 +127,19 @@ This design minimizes memory usage and allows processing of large RDF datasets w
 
 ## Format Support
 
-The library supports multiple RDF serialization formats:
+The library supports multiple RDF serialization formats, separated into triple-only and quad formats:
 
-- **Turtle** (`FormatTurtle`): Human-readable format with prefixes
-- **TriG** (`FormatTriG`): Turtle with named graphs
-- **N-Triples** (`FormatNTriples`): Simple line-based format
-- **N-Quads** (`FormatNQuads`): N-Triples with graph names
-- **RDF/XML** (`FormatRDFXML`): XML-based serialization
-- **JSON-LD** (`FormatJSONLD`): JSON-based linked data format
+**Triple formats** (use with `NewTripleDecoder`/`NewTripleEncoder`):
+- **Turtle** (`TripleFormatTurtle`): Human-readable format with prefixes
+- **N-Triples** (`TripleFormatNTriples`): Simple line-based format
+- **RDF/XML** (`TripleFormatRDFXML`): XML-based serialization
+- **JSON-LD** (`TripleFormatJSONLD`): JSON-based linked data format
+
+**Quad formats** (use with `NewQuadDecoder`/`NewQuadEncoder`):
+- **TriG** (`QuadFormatTriG`): Turtle with named graphs
+- **N-Quads** (`QuadFormatNQuads`): N-Triples with graph names
+
+The API enforces type safety: triple formats can only be used with triple decoders/encoders, and quad formats can only be used with quad decoders/encoders. This prevents format mismatches at compile time.
 
 Each format can be used for both reading (decoding) and writing (encoding).
 
