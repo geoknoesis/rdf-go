@@ -240,7 +240,7 @@ The following limits are available in `DecodeOptions`:
 
 ### Error Diagnostics
 
-Errors now include line and column information when available:
+Errors include line and column information, along with input excerpts for better debugging:
 
 ```go
 triple, err := dec.Next()
@@ -249,9 +249,19 @@ if err != nil {
     if errors.As(err, &parseErr) {
         fmt.Printf("Error at line %d, column %d: %v\n", 
             parseErr.Line, parseErr.Column, parseErr.Err)
+        // Error messages automatically include input excerpts with caret indicators
+        // Example output:
+        // turtle:3:15: unexpected token
+        //   ex:s ex:p ex:o .
+        //            ^
     }
 }
 ```
+
+Error messages automatically include:
+- Position information (line:column or offset)
+- Input excerpts showing context around the error
+- Caret indicators pointing to the error position
 
 ### JSON-LD Limits
 
@@ -273,4 +283,29 @@ dec := rdf.NewJSONLDTripleDecoder(r, opts)
 - Nested objects and arrays are fully decoded into memory (this is required for JSON-LD context processing and term expansion)
 - **Remote context resolution**: The streaming decoder supports remote context URLs when a `DocumentLoader` is provided in `JSONLDOptions`. If `@context` is a string URL, it will be loaded via the `DocumentLoader` before processing.
 - For very large documents with `@graph` before `@context`, consider reordering the JSON structure to place `@context` first, or use other RDF formats (Turtle, N-Triples, TriG, N-Quads) which have more efficient streaming characteristics
+
+---
+
+## Performance
+
+The library is optimized for performance with:
+- Streaming architecture to minimize memory usage
+- Low allocation patterns using `strings.Builder` and buffer reuse
+- Efficient string operations and parsing
+- Comprehensive benchmarks available in `rdf/benchmarks_test.go`
+
+Run benchmarks:
+```bash
+go test ./rdf -bench=. -benchmem
+```
+
+Key benchmarks include:
+- `BenchmarkTurtleDecodeLarge` - Large Turtle file decoding
+- `BenchmarkNTriplesDecodeLarge` - Large N-Triples file decoding
+- `BenchmarkTriGDecode` - TriG format decoding
+- `BenchmarkJSONLDDecode` - JSON-LD format decoding
+- `BenchmarkTurtleEncode` - Turtle encoding
+- `BenchmarkUnescapeString` - String unescaping performance
+- `BenchmarkResolveIRI` - IRI resolution performance
+- `BenchmarkFormatDetection` - Format detection performance
 
