@@ -268,5 +268,8 @@ opts := rdf.JSONLDOptions{
 dec := rdf.NewJSONLDTripleDecoder(r, opts)
 ```
 
-**Note**: JSON-LD currently loads the entire document into memory. For very large documents, consider other formats or implement streaming JSON-LD support.
+**Note**: JSON-LD currently loads the entire document into memory before parsing. This is a known limitation - JSON-LD does not support true streaming due to the need to process the entire JSON structure and expand contexts. For very large documents, consider:
+- Using other RDF formats (Turtle, N-Triples, TriG, N-Quads) which support streaming
+- Setting `MaxInputBytes` limit in `JSONLDOptions` to prevent excessive memory usage
+- Processing JSON-LD documents in smaller chunks if possible
 
