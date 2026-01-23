@@ -54,7 +54,7 @@ func ParseTriplesWithOptions(ctx context.Context, r io.Reader, format TripleForm
 	if ctx != nil {
 		r = &contextReader{ctx: ctx, r: r}
 	}
-	decoder, err := NewTripleDecoderWithOptions(r, format, opts)
+	decoder, err := NewTripleDecoderWithOptions(r, format, DecodeOptionsToOptions(opts)...)
 	if err != nil {
 		return err
 	}
@@ -93,7 +93,7 @@ func ParseQuadsWithOptions(ctx context.Context, r io.Reader, format QuadFormat, 
 	if ctx != nil {
 		r = &contextReader{ctx: ctx, r: r}
 	}
-	decoder, err := NewQuadDecoderWithOptions(r, format, opts)
+	decoder, err := NewQuadDecoderWithOptions(r, format, DecodeOptionsToOptions(opts)...)
 	if err != nil {
 		return err
 	}

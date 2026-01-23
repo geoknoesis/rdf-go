@@ -202,29 +202,64 @@ if !ok {
 - RDF/XML container elements (rdf:Bag, rdf:Seq, rdf:Alt, rdf:List) are parsed as node elements;
   container membership expansion is not implemented.
 
-## Decoder Limits
+## Security and Limits
 
-For untrusted input, use the optioned constructors to enforce limits:
+### For Untrusted Input
+
+**Always set explicit security limits** when processing untrusted input to prevent resource exhaustion attacks.
+
+```go
+// Use SafeDecodeOptions for untrusted input
+opts := rdf.SafeDecodeOptions()
+dec, err := rdf.NewTripleDecoderWithOptions(r, rdf.TripleFormatTurtle, opts)
+```
+
+Or set custom limits:
 
 ```go
 dec, err := rdf.NewTripleDecoderWithOptions(r, rdf.TripleFormatTurtle, rdf.DecodeOptions{
-    MaxLineBytes:      1 << 20, // 1MB
-    MaxStatementBytes: 4 << 20, // 4MB
+    MaxLineBytes:      64 << 10,  // 64KB per line
+    MaxStatementBytes: 256 << 10, // 256KB per statement
+    MaxDepth:          50,         // 50 levels of nesting
+    MaxTriples:        1_000_000,  // 1M triples max
+    Context:           ctx,        // For cancellation/timeouts
 })
 ```
 
-You can also pass limits to streaming helpers:
+### Security Limits
+
+The following limits are available in `DecodeOptions`:
+
+- **MaxLineBytes**: Maximum size of a single line (default: 1MB)
+- **MaxStatementBytes**: Maximum size of a complete statement (default: 4MB)
+- **MaxDepth**: Maximum nesting depth for collections, blank node lists, etc. (default: 100)
+- **MaxTriples**: Maximum number of triples/quads to process (default: 10M)
+- **Context**: Context for cancellation and timeouts
+
+**Default limits are suitable for trusted input only.** For untrusted input, use `SafeDecodeOptions()` or set stricter limits.
+
+### Error Diagnostics
+
+Errors now include line and column information when available:
 
 ```go
-opts := rdf.DecodeOptions{MaxLineBytes: 1 << 20, MaxStatementBytes: 4 << 20}
-err := rdf.ParseTriplesWithOptions(ctx, r, rdf.TripleFormatTurtle, opts, handler)
+triple, err := dec.Next()
+if err != nil {
+    var parseErr *rdf.ParseError
+    if errors.As(err, &parseErr) {
+        fmt.Printf("Error at line %d, column %d: %v\n", 
+            parseErr.Line, parseErr.Column, parseErr.Err)
+    }
+}
 ```
 
-JSON-LD decoding supports context cancellation and semantic limits:
+### JSON-LD Limits
+
+JSON-LD decoding supports additional semantic limits:
 
 ```go
 opts := rdf.JSONLDOptions{
-    Context:     ctx,
+    Context:       ctx,
     MaxInputBytes: 1 << 20,
     MaxNodes:      10000,
     MaxGraphItems: 10000,
@@ -232,4 +267,6 @@ opts := rdf.JSONLDOptions{
 }
 dec := rdf.NewJSONLDTripleDecoder(r, opts)
 ```
+
+**Note**: JSON-LD currently loads the entire document into memory. For very large documents, consider other formats or implement streaming JSON-LD support.
 

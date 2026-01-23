@@ -16,7 +16,7 @@ func FuzzDecodeNTriples(f *testing.F) {
 	f.Add([]byte(`<http://example.org/s> <http://example.org/p> "v" .`))
 	f.Fuzz(func(t *testing.T, data []byte) {
 		opts := DecodeOptions{MaxLineBytes: fuzzMaxLineBytes, MaxStatementBytes: fuzzMaxStatementBytes}
-		dec, err := NewTripleDecoderWithOptions(bytes.NewReader(data), TripleFormatNTriples, opts)
+		dec, err := NewTripleDecoderWithOptions(bytes.NewReader(data), TripleFormatNTriples, DecodeOptionsToOptions(opts)...)
 		if err != nil {
 			return
 		}
@@ -28,7 +28,7 @@ func FuzzDecodeNQuads(f *testing.F) {
 	f.Add([]byte(`<http://example.org/s> <http://example.org/p> "v" <http://example.org/g> .`))
 	f.Fuzz(func(t *testing.T, data []byte) {
 		opts := DecodeOptions{MaxLineBytes: fuzzMaxLineBytes, MaxStatementBytes: fuzzMaxStatementBytes}
-		dec, err := NewQuadDecoderWithOptions(bytes.NewReader(data), QuadFormatNQuads, opts)
+		dec, err := NewQuadDecoderWithOptions(bytes.NewReader(data), QuadFormatNQuads, DecodeOptionsToOptions(opts)...)
 		if err != nil {
 			return
 		}
@@ -40,7 +40,7 @@ func FuzzDecodeTurtle(f *testing.F) {
 	f.Add([]byte(`@prefix ex: <http://example.org/> . ex:s ex:p "v" .`))
 	f.Fuzz(func(t *testing.T, data []byte) {
 		opts := DecodeOptions{MaxLineBytes: fuzzMaxLineBytes, MaxStatementBytes: fuzzMaxStatementBytes}
-		dec, err := NewTripleDecoderWithOptions(bytes.NewReader(data), TripleFormatTurtle, opts)
+		dec, err := NewTripleDecoderWithOptions(bytes.NewReader(data), TripleFormatTurtle, DecodeOptionsToOptions(opts)...)
 		if err != nil {
 			return
 		}
@@ -52,7 +52,7 @@ func FuzzDecodeTriG(f *testing.F) {
 	f.Add([]byte(`@prefix ex: <http://example.org/> . ex:g { ex:s ex:p ex:o . }`))
 	f.Fuzz(func(t *testing.T, data []byte) {
 		opts := DecodeOptions{MaxLineBytes: fuzzMaxLineBytes, MaxStatementBytes: fuzzMaxStatementBytes}
-		dec, err := NewQuadDecoderWithOptions(bytes.NewReader(data), QuadFormatTriG, opts)
+		dec, err := NewQuadDecoderWithOptions(bytes.NewReader(data), QuadFormatTriG, DecodeOptionsToOptions(opts)...)
 		if err != nil {
 			return
 		}

@@ -16,6 +16,7 @@ type turtleParser struct {
 	pending                    []Triple
 	expansionTriples           []Triple // Triples from collections and blank node lists
 	blankNodeCounter           int
+	tripleCount                int64    // Number of triples processed
 	err                        error
 }
 
@@ -325,6 +326,10 @@ func (p *turtleParser) parseObjectListTokens(stream *turtleTokenStream, subject 
 }
 
 func (p *turtleParser) parseTermTokens(stream *turtleTokenStream, allowLiteral bool) (Term, error) {
+	return p.parseTermTokensWithDepth(stream, allowLiteral, 0)
+}
+
+func (p *turtleParser) parseTermTokensWithDepth(stream *turtleTokenStream, allowLiteral bool, depth int) (Term, error) {
 	tok := stream.peek()
 	switch tok.Kind {
 	case TokIRIRef:
@@ -365,9 +370,9 @@ func (p *turtleParser) parseTermTokens(stream *turtleTokenStream, allowLiteral b
 		stream.next()
 		return p.parseBooleanLiteralToken(tok)
 	case TokLBracket:
-		return p.parseBlankNodePropertyListTokens(stream)
+		return p.parseBlankNodePropertyListTokens(stream, depth)
 	case TokLParen:
-		return p.parseCollectionTokens(stream)
+		return p.parseCollectionTokens(stream, depth)
 	case TokLDoubleAngle:
 		return p.parseTripleTermTokens(stream)
 	case TokLangTag:
@@ -446,7 +451,11 @@ func (p *turtleParser) parseLiteralTokens(stream *turtleTokenStream, allowLitera
 	return Literal{Lexical: lexical}, nil
 }
 
-func (p *turtleParser) parseCollectionTokens(stream *turtleTokenStream) (Term, error) {
+func (p *turtleParser) parseCollectionTokens(stream *turtleTokenStream, depth int) (Term, error) {
+	// Check depth limit
+	if p.opts.MaxDepth > 0 && depth >= p.opts.MaxDepth {
+		return nil, p.wrapParseError("", ErrDepthExceeded)
+	}
 	// Consume LParen
 	if stream.next().Kind != TokLParen {
 		return nil, p.wrapParseError("", fmt.Errorf("expected '('"))
@@ -464,7 +473,7 @@ func (p *turtleParser) parseCollectionTokens(stream *turtleTokenStream) (Term, e
 			stream.next()
 			break
 		}
-		obj, err := p.parseTermTokens(stream, true)
+		obj, err := p.parseTermTokensWithDepth(stream, true, depth+1)
 		if err != nil {
 			return nil, err
 		}
@@ -484,7 +493,11 @@ func (p *turtleParser) parseCollectionTokens(stream *turtleTokenStream) (Term, e
 	return head, nil
 }
 
-func (p *turtleParser) parseBlankNodePropertyListTokens(stream *turtleTokenStream) (Term, error) {
+func (p *turtleParser) parseBlankNodePropertyListTokens(stream *turtleTokenStream, depth int) (Term, error) {
+	// Check depth limit
+	if p.opts.MaxDepth > 0 && depth >= p.opts.MaxDepth {
+		return nil, p.wrapParseError("", ErrDepthExceeded)
+	}
 	// Consume LBracket
 	if stream.next().Kind != TokLBracket {
 		return nil, p.wrapParseError("", fmt.Errorf("expected '['"))
@@ -508,7 +521,7 @@ func (p *turtleParser) parseBlankNodePropertyListTokens(stream *turtleTokenStrea
 
 		// Parse objectList
 		for {
-			object, err := p.parseTermTokens(stream, true)
+			object, err := p.parseTermTokensWithDepth(stream, true, depth+1)
 			if err != nil {
 				return nil, err
 			}
