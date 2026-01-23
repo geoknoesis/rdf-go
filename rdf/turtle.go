@@ -1213,7 +1213,7 @@ func (c *turtleCursor) parseCollection() (Term, error) {
 func (c *turtleCursor) parseCollectionWithDepth(depth int) (Term, error) {
 	// Check depth limit
 	if c.maxDepth > 0 && depth >= c.maxDepth {
-		return nil, c.errorf("nesting depth exceeded: %d", c.maxDepth)
+		return nil, ErrDepthExceeded
 	}
 	if !c.consume('(') {
 		return nil, c.errorf("expected '('")
@@ -1266,7 +1266,7 @@ func (c *turtleCursor) parseBlankNodePropertyList() (Term, error) {
 func (c *turtleCursor) parseBlankNodePropertyListWithDepth(depth int) (Term, error) {
 	// Check depth limit
 	if c.maxDepth > 0 && depth >= c.maxDepth {
-		return nil, c.errorf("nesting depth exceeded: %d", c.maxDepth)
+		return nil, ErrDepthExceeded
 	}
 	if !c.consume('[') {
 		return nil, c.errorf("expected '['")
