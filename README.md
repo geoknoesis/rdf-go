@@ -108,6 +108,34 @@ _ = enc.Write(rdf.Quad{
 _ = enc.Flush()
 ```
 
+### Format Detection
+
+Automatically detect RDF format from input:
+
+```go
+// Detect triple format
+format, ok := rdf.DetectFormat(reader)
+if ok {
+    dec, err := rdf.NewTripleDecoder(reader, format)
+    // ...
+}
+
+// Detect quad format
+quadFormat, ok := rdf.DetectQuadFormat(reader)
+if ok {
+    dec, err := rdf.NewQuadDecoder(reader, quadFormat)
+    // ...
+}
+
+// Auto-detect (tries quad formats first, then triple formats)
+formatStr, ok := rdf.DetectFormatAuto(reader)
+if ok {
+    // formatStr will be "turtle", "ntriples", "trig", "nquads", etc.
+}
+```
+
+**Note**: Format detection reads from the reader, so the reader position will be advanced. If you need to preserve the reader position, use `io.TeeReader` or buffer the input.
+
 ### Parse Triples (handler)
 
 ```go
