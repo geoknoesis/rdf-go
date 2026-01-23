@@ -647,7 +647,11 @@ func (d *trigQuadDecoder) maybeReadDirectiveContinuation(trimmed string) (string
 		}
 		return "", false, err
 	}
-	combined := strings.TrimSpace(trimmed + " " + strings.TrimSpace(stripComment(nextLine)))
+		var combinedBuilder strings.Builder
+		combinedBuilder.WriteString(trimmed)
+		combinedBuilder.WriteString(" ")
+		combinedBuilder.WriteString(strings.TrimSpace(stripComment(nextLine)))
+		combined := strings.TrimSpace(combinedBuilder.String())
 	if d.handleDirective(combined) {
 		return combined, true, nil
 	}
