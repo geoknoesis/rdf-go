@@ -58,25 +58,30 @@ func DetectFormat(r io.Reader) (TripleFormat, bool) {
 	}
 
 	// Check for N-Triples/N-Quads pattern (IRI <...> or blank node _:)
-	if strings.HasPrefix(sample, "<") || strings.HasPrefix(sample, "_:") {
+	// N-Triples/N-Quads start with < or _: and don't have prefixes or directives
+	// Also check for blank node syntax _: which is used in N-Triples
+	if (strings.HasPrefix(sample, "<") || strings.HasPrefix(sample, "_:")) &&
+		!strings.Contains(sample, "@prefix") && !strings.Contains(sample, "@base") &&
+		!strings.Contains(strings.ToUpper(sample), "PREFIX") && !strings.Contains(strings.ToUpper(sample), "BASE") &&
+		!strings.Contains(sample, "[") && !strings.Contains(sample, "(") {
 		// Check if it ends with . (N-Triples) or has 4th component (N-Quads)
-		// For N-Triples: <s> <p> <o> .
+		// For N-Triples: <s> <p> <o> . or _:b0 <p> <o> .
 		// For N-Quads: <s> <p> <o> <g> .
-		// We can't distinguish reliably without parsing, but N-Triples is more common
-		// Count angle brackets and spaces to guess
+		// Count angle brackets to guess
 		angleCount := strings.Count(sample, "<")
-		spaceCount := strings.Count(sample, " ")
-		if angleCount >= 3 && spaceCount >= 2 {
-			// Check if it has 4 IRIs (N-Quads) or 3 (N-Triples)
-			// Simple heuristic: if there are 4 < before the first >, it might be N-Quads
-			// But this is unreliable, so default to N-Triples
+		if angleCount >= 3 || strings.HasPrefix(sample, "_:") {
+			// Default to N-Triples (more common)
 			return TripleFormatNTriples, true
 		}
 	}
 
 	// Check for Turtle patterns (prefixes, base IRIs, collections, blank node lists)
-	if strings.Contains(sample, ":") && (strings.Contains(sample, "<") || strings.Contains(sample, "[")) {
-		// Likely Turtle (uses prefixes and IRIs/blank nodes)
+	// Turtle can have prefixes, base, or use : for prefixed names, or [] for blank nodes
+	if strings.Contains(sample, "@prefix") || strings.Contains(sample, "@base") ||
+		strings.Contains(strings.ToUpper(sample), "PREFIX") || strings.Contains(strings.ToUpper(sample), "BASE") ||
+		(strings.Contains(sample, ":") && !strings.HasPrefix(sample, "_:")) ||
+		strings.Contains(sample, "[") || strings.Contains(sample, "(") {
+		// Likely Turtle (uses prefixes, blank nodes, or collections)
 		return TripleFormatTurtle, true
 	}
 
@@ -154,13 +159,25 @@ func isValidJSONStructure(s string) bool {
 
 // DetectFormatAuto attempts to detect either triple or quad format.
 // It returns the format as a string and a boolean indicating success.
+// Note: This function reads from the reader, so the reader position will be advanced.
+// If you need to preserve the reader position, use io.TeeReader or buffer the input.
 func DetectFormatAuto(r io.Reader) (string, bool) {
+	// Read a sample first
+	buf := make([]byte, 512)
+	n, err := r.Read(buf)
+	if err != nil && err != io.EOF {
+		return "", false
+	}
+	sample := string(buf[:n])
+	
 	// Try quad formats first (they're more specific)
-	if quadFormat, ok := DetectQuadFormat(r); ok {
+	quadReader := strings.NewReader(sample)
+	if quadFormat, ok := DetectQuadFormat(quadReader); ok {
 		return string(quadFormat), true
 	}
 	// Try triple formats
-	if tripleFormat, ok := DetectFormat(r); ok {
+	tripleReader := strings.NewReader(sample)
+	if tripleFormat, ok := DetectFormat(tripleReader); ok {
 		return string(tripleFormat), true
 	}
 	return "", false
