@@ -23,11 +23,14 @@ func newTurtleTripleDecoder(r io.Reader) TripleDecoder {
 }
 
 func newTurtleTripleDecoderWithOptions(r io.Reader, opts DecodeOptions) TripleDecoder {
+	if opts.AllowEnvOverrides && os.Getenv("TURTLE_ALLOW_QT_STMT") != "" {
+		opts.AllowQuotedTripleStatement = true
+	}
 	return &turtleTripleDecoder{
 		reader:                     bufio.NewReader(r),
 		prefixes:                   map[string]string{},
 		opts:                       normalizeDecodeOptions(opts),
-		allowQuotedTripleStatement: opts.AllowQuotedTripleStatement || os.Getenv("TURTLE_ALLOW_QT_STMT") != "",
+		allowQuotedTripleStatement: opts.AllowQuotedTripleStatement,
 	}
 }
 
@@ -131,7 +134,7 @@ func (d *turtleTripleDecoder) appendStatementPart(builder *strings.Builder, part
 }
 
 func (d *turtleTripleDecoder) wrapParseError(statement string, err error) error {
-	if d.opts.DebugStatements || os.Getenv("TURTLE_DEBUG_STATEMENT") != "" {
+	if d.opts.DebugStatements || (d.opts.AllowEnvOverrides && os.Getenv("TURTLE_DEBUG_STATEMENT") != "") {
 		return WrapParseError("turtle", statement, -1, err)
 	}
 	return WrapParseError("turtle", "", -1, err)
@@ -162,6 +165,7 @@ func (d *turtleTripleDecoder) handleDirective(line string) bool {
 }
 
 func (d *turtleTripleDecoder) parseTripleLine(line string) ([]Triple, error) {
+	debugStatements := d.opts.DebugStatements || (d.opts.AllowEnvOverrides && os.Getenv("TURTLE_DEBUG_STATEMENT") != "")
 	cursor := &turtleCursor{
 		input:                      line,
 		prefixes:                   d.prefixes,
@@ -169,6 +173,7 @@ func (d *turtleTripleDecoder) parseTripleLine(line string) ([]Triple, error) {
 		expansionTriples:           []Triple{},
 		blankNodeCounter:           0,
 		allowQuotedTripleStatement: d.allowQuotedTripleStatement,
+		debugStatements:            debugStatements,
 	}
 	subject, err := cursor.parseSubject()
 	if err != nil {

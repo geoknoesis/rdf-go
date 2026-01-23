@@ -27,10 +27,13 @@ func newTriGQuadDecoder(r io.Reader) QuadDecoder {
 }
 
 func newTriGQuadDecoderWithOptions(r io.Reader, opts DecodeOptions) QuadDecoder {
+	if opts.AllowEnvOverrides && os.Getenv("TRIG_ALLOW_QT_STMT") != "" {
+		opts.AllowQuotedTripleStatement = true
+	}
 	return &trigQuadDecoder{
 		reader:                     bufio.NewReader(r),
 		prefixes:                   map[string]string{},
-		allowQuotedTripleStatement: opts.AllowQuotedTripleStatement || os.Getenv("TRIG_ALLOW_QT_STMT") != "",
+		allowQuotedTripleStatement: opts.AllowQuotedTripleStatement,
 		opts:                       normalizeDecodeOptions(opts),
 	}
 }
@@ -329,7 +332,8 @@ func (d *trigQuadDecoder) handleDirective(line string) bool {
 }
 
 func (d *trigQuadDecoder) parseTripleLine(line string) ([]Quad, error) {
-	triples, err := parseTurtleStatement(d.prefixes, d.baseIRI, d.allowQuotedTripleStatement, line)
+	debugStatements := d.opts.DebugStatements || (d.opts.AllowEnvOverrides && os.Getenv("TURTLE_DEBUG_STATEMENT") != "")
+	triples, err := parseTurtleStatement(d.prefixes, d.baseIRI, d.allowQuotedTripleStatement, debugStatements, line)
 	if err != nil {
 		return nil, err
 	}
@@ -352,6 +356,7 @@ func (d *trigQuadDecoder) parseInlineGraphBlock(trimmed string, openIdx, closeId
 		return nil, after, nil
 	}
 	statements := splitTurtleStatements(inner)
+	debugStatements := d.opts.DebugStatements || (d.opts.AllowEnvOverrides && os.Getenv("TURTLE_DEBUG_STATEMENT") != "")
 	var quads []Quad
 	for _, stmt := range statements {
 		stmt = strings.TrimSpace(stmt)
@@ -362,7 +367,7 @@ func (d *trigQuadDecoder) parseInlineGraphBlock(trimmed string, openIdx, closeId
 			stmt = stmt + " ."
 		}
 		stmt = normalizeTriGStatement(stmt)
-		triples, err := parseTurtleStatement(d.prefixes, d.baseIRI, d.allowQuotedTripleStatement, stmt)
+		triples, err := parseTurtleStatement(d.prefixes, d.baseIRI, d.allowQuotedTripleStatement, debugStatements, stmt)
 		if err != nil {
 			return nil, "", d.wrapParseError(stmt, err)
 		}
@@ -374,7 +379,7 @@ func (d *trigQuadDecoder) parseInlineGraphBlock(trimmed string, openIdx, closeId
 }
 
 func (d *trigQuadDecoder) wrapParseError(statement string, err error) error {
-	if d.opts.DebugStatements || os.Getenv("TURTLE_DEBUG_STATEMENT") != "" {
+	if d.opts.DebugStatements || (d.opts.AllowEnvOverrides && os.Getenv("TURTLE_DEBUG_STATEMENT") != "") {
 		return WrapParseError("trig", statement, -1, err)
 	}
 	return WrapParseError("trig", "", -1, err)

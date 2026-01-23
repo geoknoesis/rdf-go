@@ -2,7 +2,6 @@ package rdf
 
 import (
 	"fmt"
-	"os"
 	"strings"
 )
 
@@ -11,12 +10,13 @@ const (
 	rdfReifiesIRI = "http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies"
 )
 
-func parseTurtleStatement(prefixes map[string]string, baseIRI string, allowQuoted bool, line string) ([]Triple, error) {
+func parseTurtleStatement(prefixes map[string]string, baseIRI string, allowQuoted bool, debugStatements bool, line string) ([]Triple, error) {
 	decoder := &turtleTripleDecoder{
 		prefixes:                   prefixes,
 		baseIRI:                    baseIRI,
 		allowQuotedTripleStatement: allowQuoted,
 	}
+	decoder.opts.DebugStatements = debugStatements
 	return decoder.parseTripleLine(line)
 }
 
@@ -50,6 +50,7 @@ type turtleCursor struct {
 	lastTermBlankNodeList      bool
 	allowQuotedTripleStatement bool
 	lastTermReified            bool
+	debugStatements            bool
 }
 
 func (c *turtleCursor) skipWS() {
@@ -270,7 +271,7 @@ func (c *turtleCursor) parsePredicateObjectList(subject Term) ([]Triple, error) 
 			break
 		}
 		// If we get here, something is wrong
-		if os.Getenv("TURTLE_DEBUG_STATEMENT") != "" {
+		if c.debugStatements {
 			end := c.pos + 40
 			if end > len(c.input) {
 				end = len(c.input)

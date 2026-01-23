@@ -16,6 +16,8 @@ type DecodeOptions struct {
 	AllowQuotedTripleStatement bool
 	// DebugStatements wraps parse errors with the offending statement.
 	DebugStatements bool
+	// AllowEnvOverrides enables parsing behavior overrides via environment variables.
+	AllowEnvOverrides bool
 	// Context provides cancellation for decoding work.
 	Context context.Context
 }
