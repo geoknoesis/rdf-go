@@ -3,8 +3,18 @@ package rdf
 import (
 	"bufio"
 	"context"
+	"fmt"
 	"io"
 	"strings"
+)
+
+// Unicode surrogate pair constants
+const (
+	unicodeSurrogateHighStart = 0xD800
+	unicodeSurrogateHighEnd   = 0xDBFF
+	unicodeSurrogateLowStart  = 0xDC00
+	unicodeSurrogateLowEnd    = 0xDFFF
+	unicodeSurrogateBase      = 0x10000
 )
 
 func isHexDigit(ch byte) bool {
@@ -314,4 +324,135 @@ func parseBaseDirective(line string) (string, bool) {
 		return "", false
 	}
 	return rest[1:closeIdx], true
+}
+
+// UnescapeString decodes escape sequences in RDF string literals.
+// It handles simple escapes (\n, \t, etc.), Unicode escapes (\uXXXX), and Unicode long escapes (\UXXXXXXXX).
+// Surrogate pairs are supported for \uXXXX sequences.
+func UnescapeString(s string) (string, error) {
+	var builder strings.Builder
+	pos := 0
+	for pos < len(s) {
+		ch := s[pos]
+		if ch == '\\' {
+			if pos+1 >= len(s) {
+				return "", fmt.Errorf("unterminated escape")
+			}
+			next := s[pos+1]
+			var err error
+			var advance int
+			switch next {
+			case 'n', 't', 'r', 'b', 'f', '"', '\'', '\\':
+				advance, err = unescapeSimpleEscape(&builder, next)
+			case 'u':
+				advance, err = unescapeUnicodeEscape(&builder, s, pos)
+			case 'U':
+				advance, err = unescapeUnicodeLongEscape(&builder, s, pos)
+			default:
+				return "", fmt.Errorf("invalid escape sequence")
+			}
+			if err != nil {
+				return "", err
+			}
+			pos += advance
+			continue
+		}
+		builder.WriteByte(ch)
+		pos++
+	}
+	return builder.String(), nil
+}
+
+// unescapeSimpleEscape handles simple escape sequences like \n, \t, etc.
+func unescapeSimpleEscape(builder *strings.Builder, escapeChar byte) (int, error) {
+	switch escapeChar {
+	case 'n':
+		builder.WriteByte('\n')
+	case 't':
+		builder.WriteByte('\t')
+	case 'r':
+		builder.WriteByte('\r')
+	case 'b':
+		builder.WriteByte('\b')
+	case 'f':
+		builder.WriteByte('\f')
+	case '"':
+		builder.WriteByte('"')
+	case '\'':
+		builder.WriteByte('\'')
+	case '\\':
+		builder.WriteByte('\\')
+	}
+	return 2, nil
+}
+
+// unescapeUnicodeEscape handles \uXXXX escape sequences, including surrogate pairs.
+func unescapeUnicodeEscape(builder *strings.Builder, s string, pos int) (int, error) {
+	if pos+5 >= len(s) {
+		return 0, fmt.Errorf("invalid escape sequence")
+	}
+	codePoint := decodeUChar(s[pos+2 : pos+6])
+	if codePoint < 0 {
+		return 0, fmt.Errorf("invalid escape sequence")
+	}
+	
+	if codePoint >= unicodeSurrogateHighStart && codePoint <= unicodeSurrogateHighEnd {
+		// Surrogate pair - need second \uXXXX
+		return unescapeSurrogatePair(builder, s, pos, codePoint)
+	}
+	
+	if codePoint >= unicodeSurrogateLowStart && codePoint <= unicodeSurrogateLowEnd {
+		return 0, fmt.Errorf("invalid escape sequence")
+	}
+	
+	if !isValidUnicodeCodePoint(codePoint) {
+		return 0, fmt.Errorf("invalid escape sequence")
+	}
+	
+	builder.WriteRune(codePoint)
+	return 6, nil
+}
+
+// unescapeSurrogatePair handles surrogate pair escape sequences \uXXXX\uYYYY.
+func unescapeSurrogatePair(builder *strings.Builder, s string, pos int, high rune) (int, error) {
+	if pos+11 >= len(s) || s[pos+6] != '\\' || s[pos+7] != 'u' {
+		return 0, fmt.Errorf("invalid escape sequence")
+	}
+	low := decodeUChar(s[pos+8 : pos+12])
+	if low < 0 || low < unicodeSurrogateLowStart || low > unicodeSurrogateLowEnd {
+		return 0, fmt.Errorf("invalid escape sequence")
+	}
+	combined := unicodeSurrogateBase + ((high - unicodeSurrogateHighStart) << 10) + (low - unicodeSurrogateLowStart)
+	if !isValidUnicodeCodePoint(rune(combined)) {
+		return 0, fmt.Errorf("invalid escape sequence")
+	}
+	builder.WriteRune(rune(combined))
+	return 12, nil
+}
+
+// unescapeUnicodeLongEscape handles \UXXXXXXXX escape sequences.
+func unescapeUnicodeLongEscape(builder *strings.Builder, s string, pos int) (int, error) {
+	if pos+9 >= len(s) {
+		return 0, fmt.Errorf("invalid escape sequence")
+	}
+	var codePoint rune
+	for i := 2; i < 10; i++ {
+		hex := s[pos+i]
+		var digit int
+		if hex >= '0' && hex <= '9' {
+			digit = int(hex - '0')
+		} else if hex >= 'a' && hex <= 'f' {
+			digit = int(hex - 'a' + 10)
+		} else if hex >= 'A' && hex <= 'F' {
+			digit = int(hex - 'A' + 10)
+		} else {
+			return 0, fmt.Errorf("invalid escape sequence")
+		}
+		codePoint = codePoint*16 + rune(digit)
+	}
+	if !isValidUnicodeCodePoint(codePoint) {
+		return 0, fmt.Errorf("invalid escape sequence")
+	}
+	builder.WriteRune(codePoint)
+	return 10, nil
 }

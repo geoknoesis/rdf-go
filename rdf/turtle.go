@@ -10,15 +10,6 @@ const (
 	rdfReifiesIRI = "http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies"
 )
 
-// Unicode surrogate pair constants
-const (
-	unicodeSurrogateHighStart = 0xD800
-	unicodeSurrogateHighEnd   = 0xDBFF
-	unicodeSurrogateLowStart  = 0xDC00
-	unicodeSurrogateLowEnd    = 0xDFFF
-	unicodeSurrogateBase      = 0x10000
-)
-
 // generateCollectionTriples generates rdf:first/rdf:rest triples for a collection.
 // It returns the head blank node and appends expansion triples to the provided slice.
 func generateCollectionTriples(objects []Term, expansionTriples *[]Triple, newBlankNode func() BlankNode) Term {
@@ -842,20 +833,20 @@ func (c *turtleCursor) parseLiteralWithQuote(quoteChar byte) (Term, error) {
 					}
 					codePoint = codePoint*16 + rune(digit)
 				}
-				if codePoint >= 0xD800 && codePoint <= 0xDBFF {
+				if codePoint >= unicodeSurrogateHighStart && codePoint <= unicodeSurrogateHighEnd {
 					if c.pos+11 >= len(c.input) || c.input[c.pos+6] != '\\' || c.input[c.pos+7] != 'u' {
 						return nil, c.errorf("invalid escape sequence")
 					}
 					low := decodeUChar(c.input[c.pos+8 : c.pos+12])
-					if low < 0 || low < 0xDC00 || low > 0xDFFF {
+					if low < 0 || low < unicodeSurrogateLowStart || low > unicodeSurrogateLowEnd {
 						return nil, c.errorf("invalid escape sequence")
 					}
-					combined := 0x10000 + ((codePoint - 0xD800) << 10) + (low - 0xDC00)
+					combined := unicodeSurrogateBase + ((codePoint - unicodeSurrogateHighStart) << 10) + (low - unicodeSurrogateLowStart)
 					builder.WriteRune(rune(combined))
 					c.pos += 12
 					continue
 				}
-				if codePoint >= 0xDC00 && codePoint <= 0xDFFF {
+				if codePoint >= unicodeSurrogateLowStart && codePoint <= unicodeSurrogateLowEnd {
 					return nil, c.errorf("invalid escape sequence")
 				}
 				if !isValidUnicodeCodePoint(codePoint) {
@@ -1017,20 +1008,20 @@ func (c *turtleCursor) parseLongLiteral(quoteChar byte) (Term, error) {
 					}
 					codePoint = codePoint*16 + rune(digit)
 				}
-				if codePoint >= 0xD800 && codePoint <= 0xDBFF {
+				if codePoint >= unicodeSurrogateHighStart && codePoint <= unicodeSurrogateHighEnd {
 					if c.pos+11 >= len(c.input) || c.input[c.pos+6] != '\\' || c.input[c.pos+7] != 'u' {
 						return nil, c.errorf("invalid escape sequence")
 					}
 					low := decodeUChar(c.input[c.pos+8 : c.pos+12])
-					if low < 0 || low < 0xDC00 || low > 0xDFFF {
+					if low < 0 || low < unicodeSurrogateLowStart || low > unicodeSurrogateLowEnd {
 						return nil, c.errorf("invalid escape sequence")
 					}
-					combined := 0x10000 + ((codePoint - 0xD800) << 10) + (low - 0xDC00)
+					combined := unicodeSurrogateBase + ((codePoint - unicodeSurrogateHighStart) << 10) + (low - unicodeSurrogateLowStart)
 					builder.WriteRune(rune(combined))
 					c.pos += 12
 					continue
 				}
-				if codePoint >= 0xDC00 && codePoint <= 0xDFFF {
+				if codePoint >= unicodeSurrogateLowStart && codePoint <= unicodeSurrogateLowEnd {
 					return nil, c.errorf("invalid escape sequence")
 				}
 				if !isValidUnicodeCodePoint(codePoint) {

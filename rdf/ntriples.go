@@ -415,98 +415,70 @@ func (c *ntCursor) parseLiteral() (Literal, error) {
 	if !c.consume('"') {
 		return Literal{}, c.errorf("expected literal")
 	}
-	var builder strings.Builder
+	// Collect the escaped string (with escape sequences intact)
+	// Track whether we're in an escape sequence to handle escaped quotes
+	var escapedBuilder strings.Builder
+	escapeNext := false
 	for c.pos < len(c.input) {
 		ch := c.input[c.pos]
-		if ch == '"' {
+		if escapeNext {
+			// We're processing an escape sequence
+			escapedBuilder.WriteByte('\\')
+			escapedBuilder.WriteByte(ch)
 			c.pos++
-			break
-		}
-		if ch == '\\' {
-			if c.pos+1 >= len(c.input) {
-				return Literal{}, c.errorf("unterminated escape")
-			}
-			next := c.input[c.pos+1]
-			switch next {
-			case 'n':
-				builder.WriteByte('\n')
-				c.pos += 2
-			case 't':
-				builder.WriteByte('\t')
-				c.pos += 2
-			case 'r':
-				builder.WriteByte('\r')
-				c.pos += 2
-			case 'b':
-				builder.WriteByte('\b')
-				c.pos += 2
-			case 'f':
-				builder.WriteByte('\f')
-				c.pos += 2
-			case '"':
-				builder.WriteByte('"')
-				c.pos += 2
-			case '\\':
-				builder.WriteByte('\\')
-				c.pos += 2
-			case 'u':
-				// Unicode escape \uXXXX - validate and decode
-				if c.pos+5 >= len(c.input) {
+			escapeNext = false
+			// For unicode escapes, collect the hex digits
+			if ch == 'u' {
+				if c.pos+4 > len(c.input) {
 					return Literal{}, c.errorf("invalid escape sequence")
 				}
-				// Validate and parse hex digits
-				var codePoint rune
-				for i := 2; i < 6; i++ {
-					hex := c.input[c.pos+i]
-					var digit int
-					if hex >= '0' && hex <= '9' {
-						digit = int(hex - '0')
-					} else if hex >= 'a' && hex <= 'f' {
-						digit = int(hex - 'a' + 10)
-					} else if hex >= 'A' && hex <= 'F' {
-						digit = int(hex - 'A' + 10)
-					} else {
-						return Literal{}, c.errorf("invalid escape sequence")
-					}
-					codePoint = codePoint*16 + rune(digit)
+				for i := 0; i < 4 && c.pos < len(c.input); i++ {
+					escapedBuilder.WriteByte(c.input[c.pos])
+					c.pos++
 				}
-				// Write the decoded character
-				builder.WriteRune(codePoint)
-				c.pos += 6
-			case 'U':
-				// Unicode escape \UXXXXXXXX - validate and decode
-				if c.pos+9 >= len(c.input) {
+			} else if ch == 'U' {
+				if c.pos+8 > len(c.input) {
 					return Literal{}, c.errorf("invalid escape sequence")
 				}
-				// Validate and parse hex digits
-				var codePoint rune
-				for i := 2; i < 10; i++ {
-					hex := c.input[c.pos+i]
-					var digit int
-					if hex >= '0' && hex <= '9' {
-						digit = int(hex - '0')
-					} else if hex >= 'a' && hex <= 'f' {
-						digit = int(hex - 'a' + 10)
-					} else if hex >= 'A' && hex <= 'F' {
-						digit = int(hex - 'A' + 10)
-					} else {
-						return Literal{}, c.errorf("invalid escape sequence")
-					}
-					codePoint = codePoint*16 + rune(digit)
+				for i := 0; i < 8 && c.pos < len(c.input); i++ {
+					escapedBuilder.WriteByte(c.input[c.pos])
+					c.pos++
 				}
-				// Write the decoded character
-				builder.WriteRune(codePoint)
-				c.pos += 10
-			default:
-				// Invalid escape sequence (like \z)
-				return Literal{}, c.errorf("invalid escape sequence")
 			}
 			continue
 		}
-		builder.WriteByte(ch)
+		if ch == '\\' {
+			// Start of escape sequence
+			if c.pos+1 >= len(c.input) {
+				return Literal{}, c.errorf("unterminated escape")
+			}
+			escapeNext = true
+			c.pos++
+			continue
+		}
+		if ch == '"' {
+			// End of string
+			c.pos++
+			break
+		}
+		escapedBuilder.WriteByte(ch)
 		c.pos++
 	}
-	lexical := builder.String()
+	if escapeNext {
+		return Literal{}, c.errorf("unterminated escape")
+	}
+	if c.pos > len(c.input) || (c.pos == len(c.input) && c.input[c.pos-1] != '"') {
+		// Check if we found the closing quote
+		if c.pos == 0 || c.input[c.pos-1] != '"' {
+			return Literal{}, c.errorf("unterminated string literal")
+		}
+	}
+
+	// Unescape using shared function
+	lexical, err := UnescapeString(escapedBuilder.String())
+	if err != nil {
+		return Literal{}, c.errorf("%v", err)
+	}
 	c.skipWS()
 	if strings.HasPrefix(c.input[c.pos:], "@") {
 		c.pos++

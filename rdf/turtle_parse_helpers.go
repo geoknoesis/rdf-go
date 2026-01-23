@@ -61,101 +61,129 @@ func stripComment(line string) string {
 	return line
 }
 
+// turtleStatementState tracks the parsing state when scanning Turtle statements.
+type turtleStatementState struct {
+	inString        bool
+	stringQuote     byte
+	longString      bool
+	inIRI           bool
+	bracketDepth    int
+	parenDepth      int
+	annotationDepth int
+}
+
+// reset resets the state to initial values.
+func (s *turtleStatementState) reset() {
+	s.inString = false
+	s.stringQuote = 0
+	s.longString = false
+	s.inIRI = false
+	s.bracketDepth = 0
+	s.parenDepth = 0
+	s.annotationDepth = 0
+}
+
+// updateState processes a character and updates the parsing state.
+// Returns true if the character was consumed as part of a multi-character construct.
+func (s *turtleStatementState) updateState(ch byte, input string, pos int) (consumed int) {
+	if s.inString {
+		if ch == '\\' {
+			return 1 // Skip escape character, next iteration will handle escaped char
+		}
+		if ch == s.stringQuote {
+			if s.longString {
+				if pos+2 < len(input) && input[pos+1] == s.stringQuote && input[pos+2] == s.stringQuote {
+					s.inString = false
+					s.longString = false
+					return 2 // Consumed 2 more chars (total 3)
+				}
+			} else {
+				s.inString = false
+			}
+		}
+		return 0
+	}
+
+	if s.inIRI {
+		if ch == '>' && (pos == 0 || input[pos-1] != '\\') {
+			s.inIRI = false
+		}
+		return 0
+	}
+
+	if ch == '<' {
+		s.inIRI = true
+		return 0
+	}
+
+	if ch == '"' || ch == '\'' {
+		if pos+2 < len(input) && input[pos+1] == ch && input[pos+2] == ch {
+			s.inString = true
+			s.longString = true
+			s.stringQuote = ch
+			return 2 // Consumed 2 more chars (total 3)
+		} else {
+			s.inString = true
+			s.longString = false
+			s.stringQuote = ch
+		}
+		return 0
+	}
+
+	if pos+1 < len(input) && ch == '{' && input[pos+1] == '|' {
+		s.annotationDepth++
+		return 1 // Consumed 1 more char
+	}
+	if pos+1 < len(input) && ch == '|' && input[pos+1] == '}' {
+		if s.annotationDepth > 0 {
+			s.annotationDepth--
+		}
+		return 1 // Consumed 1 more char
+	}
+
+	switch ch {
+	case '[':
+		s.bracketDepth++
+	case ']':
+		if s.bracketDepth > 0 {
+			s.bracketDepth--
+		}
+	case '(':
+		s.parenDepth++
+	case ')':
+		if s.parenDepth > 0 {
+			s.parenDepth--
+		}
+	}
+	return 0
+}
+
+// isBalanced returns true if all brackets, parens, and annotations are balanced.
+func (s *turtleStatementState) isBalanced() bool {
+	return s.bracketDepth == 0 && s.parenDepth == 0 && s.annotationDepth == 0
+}
+
 func isStatementComplete(stmt string) bool {
-	inString := false
-	stringQuote := byte(0)
-	longString := false
-	inIRI := false
-	bracketDepth := 0
-	parenDepth := 0
-	annotationDepth := 0
+	var state turtleStatementState
 
 	for i := 0; i < len(stmt); i++ {
 		ch := stmt[i]
+		consumed := state.updateState(ch, stmt, i)
+		i += consumed
 
-		if inString {
-			if ch == '\\' {
-				i++
-				continue
-			}
-			if ch == stringQuote {
-				if longString {
-					if i+2 < len(stmt) && stmt[i+1] == stringQuote && stmt[i+2] == stringQuote {
-						inString = false
-						longString = false
-						i += 2
-					}
-				} else {
-					inString = false
+		if ch == '.' && state.isBalanced() {
+			if i > 0 && stmt[i-1] >= '0' && stmt[i-1] <= '9' {
+				next := byte(0)
+				if i+1 < len(stmt) {
+					next = stmt[i+1]
+				}
+				if (next >= 'a' && next <= 'z') || (next >= 'A' && next <= 'Z') || next == '_' {
+					continue
 				}
 			}
-			continue
-		}
-		if inIRI {
-			if ch == '>' && (i == 0 || stmt[i-1] != '\\') {
-				inIRI = false
-			}
-			continue
-		}
-
-		if ch == '<' {
-			inIRI = true
-			continue
-		}
-		if ch == '"' || ch == '\'' {
-			if i+2 < len(stmt) && stmt[i+1] == ch && stmt[i+2] == ch {
-				inString = true
-				longString = true
-				stringQuote = ch
-				i += 2
-			} else {
-				inString = true
-				longString = false
-				stringQuote = ch
-			}
-			continue
-		}
-
-		if i+1 < len(stmt) && stmt[i] == '{' && stmt[i+1] == '|' {
-			annotationDepth++
-			i++
-			continue
-		}
-		if i+1 < len(stmt) && stmt[i] == '|' && stmt[i+1] == '}' {
-			if annotationDepth > 0 {
-				annotationDepth--
-			}
-			i++
-			continue
-		}
-		switch ch {
-		case '[':
-			bracketDepth++
-		case ']':
-			if bracketDepth > 0 {
-				bracketDepth--
-			}
-		case '(':
-			parenDepth++
-		case ')':
-			if parenDepth > 0 {
-				parenDepth--
-			}
-		case '.':
-			if bracketDepth == 0 && parenDepth == 0 && annotationDepth == 0 {
-				if i > 0 && stmt[i-1] >= '0' && stmt[i-1] <= '9' {
-					next := byte(0)
-					if i+1 < len(stmt) {
-						next = stmt[i+1]
-					}
-					if (next >= 'a' && next <= 'z') || (next >= 'A' && next <= 'Z') || next == '_' {
-						break
-					}
-				}
-				rest := strings.TrimSpace(stmt[i+1:])
-				if rest == "" {
-					return true
-				}
+			rest := strings.TrimSpace(stmt[i+1:])
+			if rest == "" {
+				return true
 			}
 		}
 	}
@@ -165,146 +193,73 @@ func isStatementComplete(stmt string) bool {
 func splitTurtleStatements(input string) []string {
 	var statements []string
 	start := 0
-	inString := false
-	stringQuote := byte(0)
-	longString := false
-	inIRI := false
-	bracketDepth := 0
-	parenDepth := 0
-	annotationDepth := 0
+	var state turtleStatementState
 	tokenType := ""
-
-	resetState := func() {
-		inString = false
-		stringQuote = 0
-		longString = false
-		inIRI = false
-		bracketDepth = 0
-		parenDepth = 0
-		annotationDepth = 0
-		tokenType = ""
-	}
 
 	for i := 0; i < len(input); i++ {
 		ch := input[i]
+		consumed := state.updateState(ch, input, i)
 
-		if inString {
-			if ch == '\\' {
-				i++
-				continue
-			}
-			if ch == stringQuote {
-				if longString {
-					if i+2 < len(input) && input[i+1] == stringQuote && input[i+2] == stringQuote {
-						inString = false
-						longString = false
-						tokenType = ""
-						i += 2
-					}
-				} else {
-					inString = false
-					tokenType = ""
-				}
-			}
-			continue
-		}
-		if inIRI {
-			if ch == '>' {
-				inIRI = false
-				tokenType = ""
-			}
-			continue
-		}
-
+		// Update tokenType for tracking (used in splitTurtleStatements logic)
 		if ch == '<' {
-			inIRI = true
 			tokenType = "iri"
-			continue
-		}
-		if ch == '"' || ch == '\'' {
-			if i+2 < len(input) && input[i+1] == ch && input[i+2] == ch {
-				inString = true
-				longString = true
-				stringQuote = ch
+		} else if ch == '"' || ch == '\'' {
+			if consumed == 2 {
 				tokenType = "long_string"
-				i += 2
 			} else {
-				inString = true
-				longString = false
-				stringQuote = ch
 				tokenType = "string"
 			}
-			continue
-		}
-
-		if i+1 < len(input) && input[i] == '{' && input[i+1] == '|' {
-			annotationDepth++
-			i++
-			continue
-		}
-		if i+1 < len(input) && input[i] == '|' && input[i+1] == '}' {
-			if annotationDepth > 0 {
-				annotationDepth--
-			}
-			i++
-			continue
-		}
-
-		switch ch {
-		case '[':
-			bracketDepth++
+		} else if ch == '[' {
 			tokenType = "bracket"
-		case ']':
-			if bracketDepth > 0 {
-				bracketDepth--
+		} else if ch == ']' || ch == '(' || ch == ')' {
+			if ch == ']' || ch == ')' {
+				tokenType = ""
+			} else {
+				tokenType = "paren"
 			}
+		} else if !state.inString && !state.inIRI {
 			tokenType = ""
-		case '(':
-			parenDepth++
-			tokenType = "paren"
-		case ')':
-			if parenDepth > 0 {
-				parenDepth--
-			}
-			tokenType = ""
-		case '.':
-			if bracketDepth == 0 && parenDepth == 0 && annotationDepth == 0 {
-				if i > 0 && input[i-1] >= '0' && input[i-1] <= '9' {
-					next := byte(0)
-					if i+1 < len(input) {
-						next = input[i+1]
-					}
-					if (next >= 'a' && next <= 'z') || (next >= 'A' && next <= 'Z') || next == '_' {
-						break
-					}
-				}
-				if tokenType == "string" || tokenType == "long_string" || tokenType == "iri" {
-					break
-				}
-				prev := byte(0)
-				if i > 0 {
-					prev = input[i-1]
-				}
+		}
+
+		i += consumed
+
+		if ch == '.' && state.isBalanced() {
+			if i > 0 && input[i-1] >= '0' && input[i-1] <= '9' {
 				next := byte(0)
 				if i+1 < len(input) {
 					next = input[i+1]
 				}
-				if prev == '\\' {
-					break
+				if (next >= 'a' && next <= 'z') || (next >= 'A' && next <= 'Z') || next == '_' {
+					continue
 				}
-				if prev >= '0' && prev <= '9' && (next == 'e' || next == 'E') {
-					break
+			}
+			if tokenType == "string" || tokenType == "long_string" || tokenType == "iri" {
+				continue
+			}
+			prev := byte(0)
+			if i > 0 {
+				prev = input[i-1]
+			}
+			next := byte(0)
+			if i+1 < len(input) {
+				next = input[i+1]
+			}
+			if prev == '\\' {
+				continue
+			}
+			if prev >= '0' && prev <= '9' && (next == 'e' || next == 'E') {
+				continue
+			}
+			if next == 0 || next == ' ' || next == '\t' || next == '\r' || next == '\n' || next == ';' || next == ',' || next == ')' || next == ']' || next == '}' ||
+				next == '<' || next == '_' || next == '[' || next == '(' || next == ':' || next == '@' || next == '{' ||
+				(next >= 'a' && next <= 'z') || (next >= 'A' && next <= 'Z') || (next >= '0' && next <= '9') {
+				statement := strings.TrimSpace(input[start : i+1])
+				if statement != "" {
+					statements = append(statements, statement)
 				}
-				if next == 0 || next == ' ' || next == '\t' || next == '\r' || next == '\n' || next == ';' || next == ',' || next == ')' || next == ']' || next == '}' ||
-					next == '<' || next == '_' || next == '[' || next == '(' || next == ':' || next == '@' || next == '{' ||
-					(next >= 'a' && next <= 'z') || (next >= 'A' && next <= 'Z') || (next >= '0' && next <= '9') {
-					statement := strings.TrimSpace(input[start : i+1])
-					if statement != "" {
-						statements = append(statements, statement)
-					}
-					start = i + 1
-					resetState()
-				}
+				start = i + 1
+				state.reset()
+				tokenType = ""
 			}
 		}
 	}
