@@ -236,7 +236,12 @@ func (p *turtleParser) parseTriplesTokens(tokens []turtleToken, line string) ([]
 	}
 	// Add expansion triples (from collections and blank node lists)
 	triples = append(triples, p.expansionTriples...)
-	p.expansionTriples = p.expansionTriples[:0] // Reset for next statement
+	// Reset for next statement - if capacity is large, release it to prevent memory bloat
+	if cap(p.expansionTriples) > 1024 {
+		p.expansionTriples = nil
+	} else {
+		p.expansionTriples = p.expansionTriples[:0]
+	}
 	if stream.peek().Kind == TokDot {
 		stream.next()
 	}
