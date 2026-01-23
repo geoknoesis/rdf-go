@@ -826,9 +826,46 @@ func (e *jsonldTripleEncoder) Write(t Triple) error {
 		e.err = err
 		return err
 	}
-	fragment := fmt.Sprintf("{\"@id\":%q,%q:%s}", subjectID, t.P.Value, jsonldObjectValue(t.O))
-	_, err = e.writer.WriteString(fragment)
+	subjectJSON, err := json.Marshal(subjectID)
 	if err != nil {
+		e.err = err
+		return err
+	}
+	predicateJSON, err := json.Marshal(t.P.Value)
+	if err != nil {
+		e.err = err
+		return err
+	}
+	objectJSON, err := jsonldObjectValueJSON(t.O)
+	if err != nil {
+		e.err = err
+		return err
+	}
+	if _, err := e.writer.WriteString("{\"@id\":"); err != nil {
+		e.err = err
+		return err
+	}
+	if _, err := e.writer.Write(subjectJSON); err != nil {
+		e.err = err
+		return err
+	}
+	if _, err := e.writer.WriteString(","); err != nil {
+		e.err = err
+		return err
+	}
+	if _, err := e.writer.Write(predicateJSON); err != nil {
+		e.err = err
+		return err
+	}
+	if _, err := e.writer.WriteString(":"); err != nil {
+		e.err = err
+		return err
+	}
+	if _, err := e.writer.Write(objectJSON); err != nil {
+		e.err = err
+		return err
+	}
+	if _, err := e.writer.WriteString("}"); err != nil {
 		e.err = err
 		return err
 	}
@@ -862,25 +899,25 @@ func (e *jsonldTripleEncoder) Close() error {
 	return e.Flush()
 }
 
-func jsonldObjectValue(term Term) string {
+func jsonldObjectValueJSON(term Term) ([]byte, error) {
 	switch value := term.(type) {
 	case IRI:
-		return fmt.Sprintf("{\"@id\":%q}", value.Value)
+		return json.Marshal(map[string]string{"@id": value.Value})
 	case BlankNode:
-		return fmt.Sprintf("{\"@id\":%q}", value.String())
+		return json.Marshal(map[string]string{"@id": value.String()})
 	case Literal:
 		if value.Lang != "" && value.Datatype.Value != "" {
-			return fmt.Sprintf("{\"@value\":%q}", value.Lexical)
+			return json.Marshal(map[string]string{"@value": value.Lexical})
 		}
 		if value.Lang != "" {
-			return fmt.Sprintf("{\"@value\":%q,\"@language\":%q}", value.Lexical, value.Lang)
+			return json.Marshal(map[string]string{"@value": value.Lexical, "@language": value.Lang})
 		}
 		if value.Datatype.Value != "" {
-			return fmt.Sprintf("{\"@value\":%q,\"@type\":%q}", value.Lexical, value.Datatype.Value)
+			return json.Marshal(map[string]string{"@value": value.Lexical, "@type": value.Datatype.Value})
 		}
-		return fmt.Sprintf("{\"@value\":%q}", value.Lexical)
+		return json.Marshal(map[string]string{"@value": value.Lexical})
 	default:
-		return fmt.Sprintf("{\"@value\":%q}", value.String())
+		return json.Marshal(map[string]string{"@value": value.String()})
 	}
 }
 

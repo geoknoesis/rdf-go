@@ -187,14 +187,16 @@ func TestJSONLDLoadNodeError(t *testing.T) {
 
 func TestJSONLDGraphUnsupportedType(t *testing.T) {
 	var quads []Quad
-	if err := parseJSONLDGraph("bad", newJSONLDContext(), &quads); err != nil {
+	state := &jsonldState{}
+	if err := parseJSONLDGraph("bad", newJSONLDContext(), nil, state, appendQuadSink(&quads)); err != nil {
 		t.Fatalf("expected nil error, got %v", err)
 	}
 }
 
 func TestJSONLDGraphErrorPath(t *testing.T) {
 	var quads []Quad
-	err := parseJSONLDGraph(map[string]interface{}{"ex:p": "v"}, newJSONLDContext(), &quads)
+	state := &jsonldState{}
+	err := parseJSONLDGraph(map[string]interface{}{"ex:p": "v"}, newJSONLDContext(), nil, state, appendQuadSink(&quads))
 	if err == nil {
 		t.Fatal("expected graph parse error")
 	}
@@ -202,7 +204,8 @@ func TestJSONLDGraphErrorPath(t *testing.T) {
 
 func TestJSONLDGraphArraySkipsInvalid(t *testing.T) {
 	var quads []Quad
-	err := parseJSONLDGraph([]interface{}{"skip"}, newJSONLDContext(), &quads)
+	state := &jsonldState{}
+	err := parseJSONLDGraph([]interface{}{"skip"}, newJSONLDContext(), nil, state, appendQuadSink(&quads))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -210,7 +213,8 @@ func TestJSONLDGraphArraySkipsInvalid(t *testing.T) {
 
 func TestJSONLDGraphArrayError(t *testing.T) {
 	var quads []Quad
-	err := parseJSONLDGraph([]interface{}{map[string]interface{}{"ex:p": "v"}}, newJSONLDContext(), &quads)
+	state := &jsonldState{}
+	err := parseJSONLDGraph([]interface{}{map[string]interface{}{"ex:p": "v"}}, newJSONLDContext(), nil, state, appendQuadSink(&quads))
 	if err == nil {
 		t.Fatal("expected error for graph node without @id")
 	}
@@ -252,7 +256,9 @@ func TestJSONLDPredicateResolutionError(t *testing.T) {
 		"@id": "http://example.org/s",
 		"":    "v",
 	}
-	if err := parseJSONLDNode(node, newJSONLDContext(), &[]Quad{}); err == nil {
+	state := &jsonldState{}
+	var quads []Quad
+	if err := parseJSONLDNode(node, newJSONLDContext(), nil, state, appendQuadSink(&quads)); err == nil {
 		t.Fatal("expected predicate resolution error")
 	}
 }
@@ -275,14 +281,14 @@ func TestJSONLDEncoderErrorState(t *testing.T) {
 }
 
 func TestJSONLDObjectValueBranches(t *testing.T) {
-	if got := jsonldObjectValue(IRI{Value: "http://example.org/o"}); !strings.Contains(got, "@id") {
-		t.Fatalf("expected @id value, got %s", got)
+	if got, err := jsonldObjectValueJSON(IRI{Value: "http://example.org/o"}); err != nil || !strings.Contains(string(got), "@id") {
+		t.Fatalf("expected @id value, got %s (err=%v)", string(got), err)
 	}
-	if got := jsonldObjectValue(Literal{Lexical: "v"}); !strings.Contains(got, "@value") {
-		t.Fatalf("expected @value literal, got %s", got)
+	if got, err := jsonldObjectValueJSON(Literal{Lexical: "v"}); err != nil || !strings.Contains(string(got), "@value") {
+		t.Fatalf("expected @value literal, got %s (err=%v)", string(got), err)
 	}
-	if got := jsonldObjectValue(customTerm{}); got == "" {
-		t.Fatalf("expected fallback value, got %s", got)
+	if got, err := jsonldObjectValueJSON(customTerm{}); err != nil || string(got) == "" {
+		t.Fatalf("expected fallback value, got %s (err=%v)", string(got), err)
 	}
 }
 
@@ -292,7 +298,8 @@ func TestJSONLDEmitArrayBranch(t *testing.T) {
 	sub := IRI{Value: "http://example.org/s"}
 	pred := IRI{Value: "http://example.org/p"}
 	value := []interface{}{"v1", "v2"}
-	if err := emitJSONLDValue(sub, pred, value, ctx, &quads); err != nil {
+	state := &jsonldState{}
+	if err := emitJSONLDValue(sub, pred, value, ctx, nil, state, appendQuadSink(&quads)); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(quads) != 2 {
@@ -306,7 +313,8 @@ func TestJSONLDEmitValueMap(t *testing.T) {
 	sub := IRI{Value: "http://example.org/s"}
 	pred := IRI{Value: "http://example.org/p"}
 	value := map[string]interface{}{"@value": "x"}
-	if err := emitJSONLDValue(sub, pred, value, ctx, &quads); err != nil {
+	state := &jsonldState{}
+	if err := emitJSONLDValue(sub, pred, value, ctx, nil, state, appendQuadSink(&quads)); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -317,7 +325,8 @@ func TestJSONLDEmitValueUnsupportedMap(t *testing.T) {
 	sub := IRI{Value: "http://example.org/s"}
 	pred := IRI{Value: "http://example.org/p"}
 	value := map[string]interface{}{"bad": "x"}
-	if err := emitJSONLDValue(sub, pred, value, ctx, &quads); err == nil {
+	state := &jsonldState{}
+	if err := emitJSONLDValue(sub, pred, value, ctx, nil, state, appendQuadSink(&quads)); err == nil {
 		t.Fatal("expected unsupported object error")
 	}
 }
@@ -327,10 +336,11 @@ func TestJSONLDEmitValueScalarBranches(t *testing.T) {
 	ctx := newJSONLDContext()
 	sub := IRI{Value: "http://example.org/s"}
 	pred := IRI{Value: "http://example.org/p"}
-	if err := emitJSONLDValue(sub, pred, 1.5, ctx, &quads); err != nil {
+	state := &jsonldState{}
+	if err := emitJSONLDValue(sub, pred, 1.5, ctx, nil, state, appendQuadSink(&quads)); err != nil {
 		t.Fatalf("unexpected float error: %v", err)
 	}
-	if err := emitJSONLDValue(sub, pred, true, ctx, &quads); err != nil {
+	if err := emitJSONLDValue(sub, pred, true, ctx, nil, state, appendQuadSink(&quads)); err != nil {
 		t.Fatalf("unexpected bool error: %v", err)
 	}
 }
@@ -341,8 +351,16 @@ func TestJSONLDEmitArrayError(t *testing.T) {
 	sub := IRI{Value: "http://example.org/s"}
 	pred := IRI{Value: "http://example.org/p"}
 	value := []interface{}{map[string]interface{}{"bad": "x"}}
-	if err := emitJSONLDValue(sub, pred, value, ctx, &quads); err == nil {
+	state := &jsonldState{}
+	if err := emitJSONLDValue(sub, pred, value, ctx, nil, state, appendQuadSink(&quads)); err == nil {
 		t.Fatal("expected error for invalid array value")
+	}
+}
+
+func appendQuadSink(quads *[]Quad) jsonldQuadSink {
+	return func(q Quad) error {
+		*quads = append(*quads, q)
+		return nil
 	}
 }
 
@@ -359,7 +377,7 @@ func TestJSONLDWriteErrors(t *testing.T) {
 	if err := enc.Flush(); err == nil {
 		t.Fatal("expected flush error")
 	}
-	
+
 	enc, err = NewTripleEncoder(&bytes.Buffer{}, TripleFormatJSONLD)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
