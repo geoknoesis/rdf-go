@@ -10,6 +10,57 @@ const (
 	rdfReifiesIRI = "http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies"
 )
 
+// Unicode surrogate pair constants
+const (
+	unicodeSurrogateHighStart = 0xD800
+	unicodeSurrogateHighEnd   = 0xDBFF
+	unicodeSurrogateLowStart  = 0xDC00
+	unicodeSurrogateLowEnd    = 0xDFFF
+	unicodeSurrogateBase      = 0x10000
+)
+
+// generateCollectionTriples generates rdf:first/rdf:rest triples for a collection.
+// It returns the head blank node and appends expansion triples to the provided slice.
+func generateCollectionTriples(objects []Term, expansionTriples *[]Triple, newBlankNode func() BlankNode) Term {
+	if len(objects) == 0 {
+		return IRI{Value: rdfNilIRI}
+	}
+
+	head := newBlankNode()
+	rdfFirst := IRI{Value: rdfFirstIRI}
+	rdfRest := IRI{Value: rdfRestIRI}
+	rdfNil := IRI{Value: rdfNilIRI}
+
+	current := head
+	for i, obj := range objects {
+		// rdf:first triple
+		*expansionTriples = append(*expansionTriples, Triple{
+			S: current,
+			P: rdfFirst,
+			O: obj,
+		})
+
+		// rdf:rest triple
+		var rest Term
+		if i == len(objects)-1 {
+			rest = rdfNil
+		} else {
+			rest = newBlankNode()
+		}
+		*expansionTriples = append(*expansionTriples, Triple{
+			S: current,
+			P: rdfRest,
+			O: rest,
+		})
+
+		if bn, ok := rest.(BlankNode); ok {
+			current = bn
+		}
+	}
+
+	return head
+}
+
 func parseTurtleStatement(prefixes map[string]string, baseIRI string, allowQuoted bool, debugStatements bool, line string) ([]Triple, error) {
 	return parseTurtleTripleLine(prefixes, baseIRI, allowQuoted, debugStatements, line)
 }
@@ -1284,38 +1335,7 @@ func (c *turtleCursor) parseCollection() (Term, error) {
 	}
 
 	// Generate rdf:first/rdf:rest triples
-	head := c.newBlankNode()
-	rdfFirst := IRI{Value: rdfFirstIRI}
-	rdfRest := IRI{Value: rdfRestIRI}
-	rdfNil := IRI{Value: rdfNilIRI}
-
-	current := head
-	for i, obj := range objects {
-		// rdf:first triple
-		c.expansionTriples = append(c.expansionTriples, Triple{
-			S: current,
-			P: rdfFirst,
-			O: obj,
-		})
-
-		// rdf:rest triple
-		var rest Term
-		if i == len(objects)-1 {
-			rest = rdfNil
-		} else {
-			rest = c.newBlankNode()
-		}
-		c.expansionTriples = append(c.expansionTriples, Triple{
-			S: current,
-			P: rdfRest,
-			O: rest,
-		})
-
-		if bn, ok := rest.(BlankNode); ok {
-			current = bn
-		}
-	}
-
+	head := generateCollectionTriples(objects, &c.expansionTriples, c.newBlankNode)
 	return head, nil
 }
 

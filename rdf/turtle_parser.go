@@ -43,73 +43,83 @@ func (p *turtleParser) NextTriple() (Triple, error) {
 		p.pending = p.pending[1:]
 		return next, nil
 	}
+
+	triple, err := p.readNextTriple()
+	if err != nil {
+		p.err = err
+	}
+	return triple, err
+}
+
+// readNextTriple reads and parses the next triple from the input stream.
+func (p *turtleParser) readNextTriple() (Triple, error) {
 	for {
 		if err := checkDecodeContext(p.opts.Context); err != nil {
-			p.err = err
 			return Triple{}, err
 		}
-		var statement strings.Builder
-		for {
-			if err := checkDecodeContext(p.opts.Context); err != nil {
-				p.err = err
-				return Triple{}, err
+
+		statement, err := p.readStatementLines()
+		if err != nil {
+			return Triple{}, err
+		}
+
+		if statement == "" {
+			return Triple{}, io.EOF
+		}
+
+		triples, err := p.parseStatement(statement)
+		if err != nil {
+			return Triple{}, err
+		}
+
+		if len(triples) == 0 {
+			continue
+		}
+
+		if len(triples) > 1 {
+			p.pending = triples[1:]
+		}
+		return triples[0], nil
+	}
+}
+
+// readStatementLines reads lines from the lexer and builds a complete statement.
+func (p *turtleParser) readStatementLines() (string, error) {
+	var statement strings.Builder
+	for {
+		if err := checkDecodeContext(p.opts.Context); err != nil {
+			return "", err
+		}
+
+		token := p.lexer.Next()
+		switch token.Kind {
+		case TokEOF:
+			if statement.Len() == 0 {
+				return "", io.EOF
 			}
-			token := p.lexer.Next()
-			switch token.Kind {
-			case TokEOF:
-				if statement.Len() == 0 {
-					return Triple{}, io.EOF
-				}
-				// Parse what we have so far
-				line := strings.TrimSpace(statement.String())
-				if line == "" {
-					return Triple{}, io.EOF
-				}
-				triples, err := p.parseStatement(line)
-				if err != nil {
-					p.err = err
-					return Triple{}, err
-				}
-				if len(triples) == 0 {
-					return Triple{}, io.EOF
-				}
-				if len(triples) > 1 {
-					p.pending = triples[1:]
-				}
-				return triples[0], nil
-			case TokError:
-				p.err = token.Err
-				return Triple{}, token.Err
-			case TokLine:
-				// Quick check: if line looks like a directive, tokenize and parse it
-				if statement.Len() == 0 && p.isLikelyDirective(token.Lexeme) {
-					tokens, err := tokenizeTurtleLine(token.Lexeme)
-					if err == nil {
-						if handled, _ := p.parseDirectiveTokens(tokens); handled {
-							continue
-						}
-					}
-				}
-				if err := p.appendStatementPart(&statement, token.Lexeme); err != nil {
-					p.err = err
-					return Triple{}, err
-				}
-				stmt := strings.TrimSpace(statement.String())
-				if stmt != "" && isStatementComplete(stmt) {
-					triples, err := p.parseStatement(stmt)
-					if err != nil {
-						p.err = err
-						return Triple{}, err
-					}
-					if len(triples) == 0 {
-						statement.Reset()
+			return strings.TrimSpace(statement.String()), nil
+
+		case TokError:
+			return "", token.Err
+
+		case TokLine:
+			// Quick check: if line looks like a directive, tokenize and parse it
+			if statement.Len() == 0 && p.isLikelyDirective(token.Lexeme) {
+				tokens, err := tokenizeTurtleLine(token.Lexeme)
+				if err == nil {
+					if handled, _ := p.parseDirectiveTokens(tokens); handled {
 						continue
 					}
-					if len(triples) > 1 {
-						p.pending = triples[1:]
-					}
-					return triples[0], nil
 				}
+			}
+
+			if err := p.appendStatementPart(&statement, token.Lexeme); err != nil {
+				return "", err
+			}
+
+			stmt := strings.TrimSpace(statement.String())
+			if stmt != "" && isStatementComplete(stmt) {
+				return stmt, nil
 			}
 		}
 	}
@@ -243,16 +253,23 @@ func (p *turtleParser) parsePredicateObjectListTokens(stream *turtleTokenStream,
 			return nil, err
 		}
 		triples = append(triples, objectTriples...)
-		if stream.peek().Kind == TokSemicolon {
-			for stream.peek().Kind == TokSemicolon {
-				stream.next()
-			}
+
+		next := stream.peek().Kind
+		if next == TokSemicolon {
+			p.skipSemicolons(stream)
 			if stream.peek().Kind == TokDot || stream.peek().Kind == TokEOF {
 				return triples, nil
 			}
 			continue
 		}
 		return triples, nil
+	}
+}
+
+// skipSemicolons consumes one or more semicolon tokens.
+func (p *turtleParser) skipSemicolons(stream *turtleTokenStream) {
+	for stream.peek().Kind == TokSemicolon {
+		stream.next()
 	}
 }
 
@@ -268,7 +285,7 @@ func (p *turtleParser) parseVerbTokens(stream *turtleTokenStream) (IRI, error) {
 	}
 	iri, ok := term.(IRI)
 	if !ok {
-		return IRI{}, WrapParseError("turtle", "", -1, fmt.Errorf("predicate must be IRI, got %T", term))
+		return IRI{}, p.wrapParseError("", fmt.Errorf("predicate must be IRI, got %T", term))
 	}
 	return iri, nil
 }
@@ -314,18 +331,18 @@ func (p *turtleParser) parseTermTokens(stream *turtleTokenStream, allowLiteral b
 		prefix := strings.TrimSuffix(tok.Lexeme, ":")
 		base, ok := p.prefixes[prefix]
 		if !ok {
-			return nil, WrapParseError("turtle", "", -1, fmt.Errorf("undefined prefix: %s", prefix))
+			return nil, p.wrapParseError("", fmt.Errorf("undefined prefix: %s", prefix))
 		}
 		return IRI{Value: base}, nil
 	case TokPNAMELN:
 		stream.next()
 		parts := strings.SplitN(tok.Lexeme, ":", 2)
 		if len(parts) != 2 {
-			return nil, WrapParseError("turtle", "", -1, fmt.Errorf("invalid prefixed name: %s", tok.Lexeme))
+			return nil, p.wrapParseError("", fmt.Errorf("invalid prefixed name: %s", tok.Lexeme))
 		}
 		base, ok := p.prefixes[parts[0]]
 		if !ok {
-			return nil, WrapParseError("turtle", "", -1, fmt.Errorf("undefined prefix: %s", parts[0]))
+			return nil, p.wrapParseError("", fmt.Errorf("undefined prefix: %s", parts[0]))
 		}
 		return IRI{Value: base + parts[1]}, nil
 	case TokBlankNode:
@@ -347,18 +364,18 @@ func (p *turtleParser) parseTermTokens(stream *turtleTokenStream, allowLiteral b
 		return p.parseTripleTermTokens(stream)
 	case TokLangTag:
 		// Language tags should only appear after string literals, not as standalone tokens
-		return nil, WrapParseError("turtle", "", -1, fmt.Errorf("unexpected language tag (must follow a string literal)"))
+		return nil, p.wrapParseError("", fmt.Errorf("unexpected language tag (must follow a string literal)"))
 	case TokDatatypePrefix:
 		// Datatype prefix should only appear after string literals, not as standalone tokens
-		return nil, WrapParseError("turtle", "", -1, fmt.Errorf("unexpected datatype prefix (must follow a string literal)"))
+		return nil, p.wrapParseError("", fmt.Errorf("unexpected datatype prefix (must follow a string literal)"))
 	default:
-		return nil, WrapParseError("turtle", "", -1, fmt.Errorf("unexpected token: %v", tok.Kind))
+		return nil, p.wrapParseError("", fmt.Errorf("unexpected token: %v", tok.Kind))
 	}
 }
 
 func (p *turtleParser) parseLiteralTokens(stream *turtleTokenStream, allowLiteral bool) (Term, error) {
 	if !allowLiteral {
-		return nil, WrapParseError("turtle", "", -1, fmt.Errorf("literal not allowed here"))
+		return nil, p.wrapParseError("", fmt.Errorf("literal not allowed here"))
 	}
 	tok := stream.next()
 	lexeme := tok.Lexeme
@@ -368,7 +385,7 @@ func (p *turtleParser) parseLiteralTokens(stream *turtleTokenStream, allowLitera
 	if tok.Kind == TokStringLong {
 		// Long string: """...""" or '''...'''
 		if len(lexeme) < 6 {
-			return nil, WrapParseError("turtle", "", -1, fmt.Errorf("invalid long string"))
+			return nil, p.wrapParseError("", fmt.Errorf("invalid long string"))
 		}
 		quote := lexeme[0]
 		lexical = lexeme[3 : len(lexeme)-3] // Remove triple quotes
@@ -376,12 +393,12 @@ func (p *turtleParser) parseLiteralTokens(stream *turtleTokenStream, allowLitera
 		var err error
 		lexical, err = p.unescapeString(lexical, quote)
 		if err != nil {
-			return nil, WrapParseError("turtle", "", -1, err)
+			return nil, p.wrapParseError("", err)
 		}
 	} else {
 		// Regular string: "..." or '...'
 		if len(lexeme) < 2 {
-			return nil, WrapParseError("turtle", "", -1, fmt.Errorf("invalid string"))
+			return nil, p.wrapParseError("", fmt.Errorf("invalid string"))
 		}
 		quote := lexeme[0]
 		lexical = lexeme[1 : len(lexeme)-1] // Remove quotes
@@ -389,7 +406,7 @@ func (p *turtleParser) parseLiteralTokens(stream *turtleTokenStream, allowLitera
 		var err error
 		lexical, err = p.unescapeString(lexical, quote)
 		if err != nil {
-			return nil, WrapParseError("turtle", "", -1, err)
+			return nil, p.wrapParseError("", err)
 		}
 	}
 
@@ -399,11 +416,11 @@ func (p *turtleParser) parseLiteralTokens(stream *turtleTokenStream, allowLitera
 		stream.next()
 		lang := next.Lexeme
 		if !isValidLangTag(lang) {
-			return nil, WrapParseError("turtle", "", -1, fmt.Errorf("invalid language tag: %s", lang))
+			return nil, p.wrapParseError("", fmt.Errorf("invalid language tag: %s", lang))
 		}
 		// Check that there's no datatype after lang tag
 		if stream.peek().Kind == TokDatatypePrefix {
-			return nil, WrapParseError("turtle", "", -1, fmt.Errorf("literal cannot have both language tag and datatype"))
+			return nil, p.wrapParseError("", fmt.Errorf("literal cannot have both language tag and datatype"))
 		}
 		return Literal{Lexical: lexical, Lang: lang}, nil
 	}
@@ -416,7 +433,7 @@ func (p *turtleParser) parseLiteralTokens(stream *turtleTokenStream, allowLitera
 		}
 		iri, ok := dtTerm.(IRI)
 		if !ok {
-			return nil, WrapParseError("turtle", "", -1, fmt.Errorf("datatype must be IRI"))
+			return nil, p.wrapParseError("", fmt.Errorf("datatype must be IRI"))
 		}
 		return Literal{Lexical: lexical, Datatype: iri}, nil
 	}
@@ -426,7 +443,7 @@ func (p *turtleParser) parseLiteralTokens(stream *turtleTokenStream, allowLitera
 func (p *turtleParser) parseCollectionTokens(stream *turtleTokenStream) (Term, error) {
 	// Consume LParen
 	if stream.next().Kind != TokLParen {
-		return nil, WrapParseError("turtle", "", -1, fmt.Errorf("expected '('"))
+		return nil, p.wrapParseError("", fmt.Errorf("expected '('"))
 	}
 
 	// Check for empty collection
@@ -457,45 +474,14 @@ func (p *turtleParser) parseCollectionTokens(stream *turtleTokenStream) (Term, e
 	}
 
 	// Generate rdf:first/rdf:rest triples
-	head := p.newBlankNode()
-	rdfFirst := IRI{Value: rdfFirstIRI}
-	rdfRest := IRI{Value: rdfRestIRI}
-	rdfNil := IRI{Value: rdfNilIRI}
-
-	current := head
-	for i, obj := range objects {
-		// rdf:first triple
-		p.expansionTriples = append(p.expansionTriples, Triple{
-			S: current,
-			P: rdfFirst,
-			O: obj,
-		})
-
-		// rdf:rest triple
-		var rest Term
-		if i == len(objects)-1 {
-			rest = rdfNil
-		} else {
-			rest = p.newBlankNode()
-		}
-		p.expansionTriples = append(p.expansionTriples, Triple{
-			S: current,
-			P: rdfRest,
-			O: rest,
-		})
-
-		if bn, ok := rest.(BlankNode); ok {
-			current = bn
-		}
-	}
-
+	head := generateCollectionTriples(objects, &p.expansionTriples, p.newBlankNode)
 	return head, nil
 }
 
 func (p *turtleParser) parseBlankNodePropertyListTokens(stream *turtleTokenStream) (Term, error) {
 	// Consume LBracket
 	if stream.next().Kind != TokLBracket {
-		return nil, WrapParseError("turtle", "", -1, fmt.Errorf("expected '['"))
+		return nil, p.wrapParseError("", fmt.Errorf("expected '['"))
 	}
 
 	// Check for empty blank node property list
@@ -538,28 +524,27 @@ func (p *turtleParser) parseBlankNodePropertyListTokens(stream *turtleTokenStrea
 		}
 
 		// Check for semicolon or closing bracket
-		if stream.peek().Kind == TokRBracket {
+		next := stream.peek().Kind
+		if next == TokRBracket {
 			stream.next()
 			return bn, nil
 		}
-		if stream.peek().Kind == TokSemicolon {
-			for stream.peek().Kind == TokSemicolon {
-				stream.next()
-			}
+		if next == TokSemicolon {
+			p.skipSemicolons(stream)
 			if stream.peek().Kind == TokRBracket {
 				stream.next()
 				return bn, nil
 			}
 			continue
 		}
-		return nil, WrapParseError("turtle", "", -1, fmt.Errorf("expected ',' or ';' or ']'"))
+		return nil, p.wrapParseError("", fmt.Errorf("expected ',' or ';' or ']'"))
 	}
 }
 
 func (p *turtleParser) parseTripleTermTokens(stream *turtleTokenStream) (Term, error) {
 	// Consume LDoubleAngle
 	if stream.next().Kind != TokLDoubleAngle {
-		return nil, WrapParseError("turtle", "", -1, fmt.Errorf("expected '<<'"))
+		return nil, p.wrapParseError("", fmt.Errorf("expected '<<'"))
 	}
 
 	// Check for optional parens: <<( ... )>>
@@ -589,7 +574,7 @@ func (p *turtleParser) parseTripleTermTokens(stream *turtleTokenStream) (Term, e
 
 	if hasParens {
 		if stream.peek().Kind != TokRParen {
-			return nil, WrapParseError("turtle", "", -1, fmt.Errorf("expected ')'"))
+			return nil, p.wrapParseError("", fmt.Errorf("expected ')'"))
 		}
 		stream.next()
 	}
@@ -600,7 +585,7 @@ func (p *turtleParser) parseTripleTermTokens(stream *turtleTokenStream) (Term, e
 	// This is a limitation that can be addressed by extending the lexer
 
 	if stream.peek().Kind != TokRDoubleAngle {
-		return nil, WrapParseError("turtle", "", -1, fmt.Errorf("expected '>>'"))
+		return nil, p.wrapParseError("", fmt.Errorf("expected '>>'"))
 	}
 	stream.next()
 	return TripleTerm{S: subject, P: predicate, O: object}, nil
@@ -616,99 +601,122 @@ func (p *turtleParser) unescapeString(s string, quoteChar byte) (string, error) 
 				return "", fmt.Errorf("unterminated escape")
 			}
 			next := s[pos+1]
+			var err error
+			var advance int
 			switch next {
-			case 'n':
-				builder.WriteByte('\n')
-				pos += 2
-			case 't':
-				builder.WriteByte('\t')
-				pos += 2
-			case 'r':
-				builder.WriteByte('\r')
-				pos += 2
-			case 'b':
-				builder.WriteByte('\b')
-				pos += 2
-			case 'f':
-				builder.WriteByte('\f')
-				pos += 2
-			case '"':
-				builder.WriteByte('"')
-				pos += 2
-			case '\'':
-				builder.WriteByte('\'')
-				pos += 2
-			case '\\':
-				builder.WriteByte('\\')
-				pos += 2
+			case 'n', 't', 'r', 'b', 'f', '"', '\'', '\\':
+				advance, err = p.unescapeSimpleEscape(&builder, next)
 			case 'u':
-				// Unicode escape \uXXXX
-				if pos+5 >= len(s) {
-					return "", fmt.Errorf("invalid escape sequence")
-				}
-				codePoint := decodeUChar(s[pos+2 : pos+6])
-				if codePoint < 0 {
-					return "", fmt.Errorf("invalid escape sequence")
-				}
-				if codePoint >= 0xD800 && codePoint <= 0xDBFF {
-					// Surrogate pair
-					if pos+11 >= len(s) || s[pos+6] != '\\' || s[pos+7] != 'u' {
-						return "", fmt.Errorf("invalid escape sequence")
-					}
-					low := decodeUChar(s[pos+8 : pos+12])
-					if low < 0 || low < 0xDC00 || low > 0xDFFF {
-						return "", fmt.Errorf("invalid escape sequence")
-					}
-					combined := 0x10000 + ((codePoint - 0xD800) << 10) + (low - 0xDC00)
-					if !isValidUnicodeCodePoint(rune(combined)) {
-						return "", fmt.Errorf("invalid escape sequence")
-					}
-					builder.WriteRune(rune(combined))
-					pos += 12
-					continue
-				}
-				if codePoint >= 0xDC00 && codePoint <= 0xDFFF {
-					return "", fmt.Errorf("invalid escape sequence")
-				}
-				if !isValidUnicodeCodePoint(codePoint) {
-					return "", fmt.Errorf("invalid escape sequence")
-				}
-				builder.WriteRune(codePoint)
-				pos += 6
+				advance, err = p.unescapeUnicodeEscape(&builder, s, pos)
 			case 'U':
-				// Unicode escape \UXXXXXXXX
-				if pos+9 >= len(s) {
-					return "", fmt.Errorf("invalid escape sequence")
-				}
-				var codePoint rune
-				for i := 2; i < 10; i++ {
-					hex := s[pos+i]
-					var digit int
-					if hex >= '0' && hex <= '9' {
-						digit = int(hex - '0')
-					} else if hex >= 'a' && hex <= 'f' {
-						digit = int(hex - 'a' + 10)
-					} else if hex >= 'A' && hex <= 'F' {
-						digit = int(hex - 'A' + 10)
-					} else {
-						return "", fmt.Errorf("invalid escape sequence")
-					}
-					codePoint = codePoint*16 + rune(digit)
-				}
-				if !isValidUnicodeCodePoint(codePoint) {
-					return "", fmt.Errorf("invalid escape sequence")
-				}
-				builder.WriteRune(codePoint)
-				pos += 10
+				advance, err = p.unescapeUnicodeLongEscape(&builder, s, pos)
 			default:
 				return "", fmt.Errorf("invalid escape sequence")
 			}
+			if err != nil {
+				return "", err
+			}
+			pos += advance
 			continue
 		}
 		builder.WriteByte(ch)
 		pos++
 	}
 	return builder.String(), nil
+}
+
+// unescapeSimpleEscape handles simple escape sequences like \n, \t, etc.
+func (p *turtleParser) unescapeSimpleEscape(builder *strings.Builder, escapeChar byte) (int, error) {
+	switch escapeChar {
+	case 'n':
+		builder.WriteByte('\n')
+	case 't':
+		builder.WriteByte('\t')
+	case 'r':
+		builder.WriteByte('\r')
+	case 'b':
+		builder.WriteByte('\b')
+	case 'f':
+		builder.WriteByte('\f')
+	case '"':
+		builder.WriteByte('"')
+	case '\'':
+		builder.WriteByte('\'')
+	case '\\':
+		builder.WriteByte('\\')
+	}
+	return 2, nil
+}
+
+// unescapeUnicodeEscape handles \uXXXX escape sequences, including surrogate pairs.
+func (p *turtleParser) unescapeUnicodeEscape(builder *strings.Builder, s string, pos int) (int, error) {
+	if pos+5 >= len(s) {
+		return 0, fmt.Errorf("invalid escape sequence")
+	}
+	codePoint := decodeUChar(s[pos+2 : pos+6])
+	if codePoint < 0 {
+		return 0, fmt.Errorf("invalid escape sequence")
+	}
+
+	if codePoint >= unicodeSurrogateHighStart && codePoint <= unicodeSurrogateHighEnd {
+		// Surrogate pair - need second \uXXXX
+		return p.unescapeSurrogatePair(builder, s, pos, codePoint)
+	}
+
+	if codePoint >= unicodeSurrogateLowStart && codePoint <= unicodeSurrogateLowEnd {
+		return 0, fmt.Errorf("invalid escape sequence")
+	}
+
+	if !isValidUnicodeCodePoint(codePoint) {
+		return 0, fmt.Errorf("invalid escape sequence")
+	}
+
+	builder.WriteRune(codePoint)
+	return 6, nil
+}
+
+// unescapeSurrogatePair handles surrogate pair escape sequences \uXXXX\uYYYY.
+func (p *turtleParser) unescapeSurrogatePair(builder *strings.Builder, s string, pos int, high rune) (int, error) {
+	if pos+11 >= len(s) || s[pos+6] != '\\' || s[pos+7] != 'u' {
+		return 0, fmt.Errorf("invalid escape sequence")
+	}
+	low := decodeUChar(s[pos+8 : pos+12])
+	if low < 0 || low < unicodeSurrogateLowStart || low > unicodeSurrogateLowEnd {
+		return 0, fmt.Errorf("invalid escape sequence")
+	}
+	combined := unicodeSurrogateBase + ((high - unicodeSurrogateHighStart) << 10) + (low - unicodeSurrogateLowStart)
+	if !isValidUnicodeCodePoint(rune(combined)) {
+		return 0, fmt.Errorf("invalid escape sequence")
+	}
+	builder.WriteRune(rune(combined))
+	return 12, nil
+}
+
+// unescapeUnicodeLongEscape handles \UXXXXXXXX escape sequences.
+func (p *turtleParser) unescapeUnicodeLongEscape(builder *strings.Builder, s string, pos int) (int, error) {
+	if pos+9 >= len(s) {
+		return 0, fmt.Errorf("invalid escape sequence")
+	}
+	var codePoint rune
+	for i := 2; i < 10; i++ {
+		hex := s[pos+i]
+		var digit int
+		if hex >= '0' && hex <= '9' {
+			digit = int(hex - '0')
+		} else if hex >= 'a' && hex <= 'f' {
+			digit = int(hex - 'a' + 10)
+		} else if hex >= 'A' && hex <= 'F' {
+			digit = int(hex - 'A' + 10)
+		} else {
+			return 0, fmt.Errorf("invalid escape sequence")
+		}
+		codePoint = codePoint*16 + rune(digit)
+	}
+	if !isValidUnicodeCodePoint(codePoint) {
+		return 0, fmt.Errorf("invalid escape sequence")
+	}
+	builder.WriteRune(codePoint)
+	return 10, nil
 }
 
 func (p *turtleParser) parseNumericLiteralToken(tok turtleToken) (Term, error) {
@@ -748,7 +756,7 @@ func (p *turtleParser) parseBooleanLiteralToken(tok turtleToken) (Term, error) {
 func (p *turtleParser) parseAnnotationTokens(stream *turtleTokenStream, annotationSubject Term) ([]Triple, error) {
 	// Consume AnnotationL {|
 	if stream.next().Kind != TokAnnotationL {
-		return nil, WrapParseError("turtle", "", -1, fmt.Errorf("expected '{|'"))
+		return nil, p.wrapParseError("", fmt.Errorf("expected '{|'"))
 	}
 
 	var annotationTriples []Triple
@@ -790,21 +798,20 @@ func (p *turtleParser) parseAnnotationTokens(stream *turtleTokenStream, annotati
 		}
 
 		// Check for semicolon or closing annotation
-		if stream.peek().Kind == TokSemicolon {
-			for stream.peek().Kind == TokSemicolon {
-				stream.next()
-			}
+		next := stream.peek().Kind
+		if next == TokSemicolon {
+			p.skipSemicolons(stream)
 			if stream.peek().Kind == TokAnnotationR {
 				stream.next()
 				break
 			}
 			continue
 		}
-		if stream.peek().Kind == TokAnnotationR {
+		if next == TokAnnotationR {
 			stream.next()
 			break
 		}
-		return nil, WrapParseError("turtle", "", -1, fmt.Errorf("expected ',' or ';' or '|}'"))
+		return nil, p.wrapParseError("", fmt.Errorf("expected ',' or ';' or '|}'"))
 	}
 
 	return annotationTriples, nil
