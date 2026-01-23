@@ -58,20 +58,20 @@ func DetectFormat(r io.Reader) (TripleFormat, bool) {
 	}
 
 	// Check for N-Triples/N-Quads pattern (IRI <...> or blank node _:)
-	// N-Triples/N-Quads start with < or _: and don't have prefixes or directives
+	// N-Triples/N-Quads start with < or contain _: and don't have prefixes or directives
 	// Also check for blank node syntax _: which is used in N-Triples
-	hasNTriplesPattern := (strings.HasPrefix(sample, "<") || strings.HasPrefix(sample, "_:")) &&
+	hasNTriplesPattern := (strings.HasPrefix(sample, "<") || strings.Contains(sample, " _:") || strings.HasPrefix(sample, "_:")) &&
 		!strings.Contains(sample, "@prefix") && !strings.Contains(sample, "@base") &&
 		!strings.Contains(strings.ToUpper(sample), "PREFIX") && !strings.Contains(strings.ToUpper(sample), "BASE") &&
 		!strings.Contains(sample, "[") && !strings.Contains(sample, "(")
 	
 	if hasNTriplesPattern {
 		// Check if it ends with . (N-Triples) or has 4th component (N-Quads)
-		// For N-Triples: <s> <p> <o> . or _:b0 <p> <o> .
+		// For N-Triples: <s> <p> <o> . or <s> <p> _:b0 .
 		// For N-Quads: <s> <p> <o> <g> .
 		// Count angle brackets to guess
 		angleCount := strings.Count(sample, "<")
-		if angleCount >= 3 || strings.HasPrefix(sample, "_:") {
+		if angleCount >= 3 || strings.Contains(sample, " _:") || strings.HasPrefix(sample, "_:") {
 			// Default to N-Triples (more common)
 			return TripleFormatNTriples, true
 		}
