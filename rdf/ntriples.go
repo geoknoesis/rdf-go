@@ -12,8 +12,8 @@ type ntTripleDecoder struct {
 	reader      *bufio.Reader
 	err         error
 	opts        DecodeOptions
-	lineNum     int    // Current line number (1-based)
-	tripleCount int64  // Number of triples processed
+	lineNum     int   // Current line number (1-based)
+	tripleCount int64 // Number of triples processed
 }
 
 func newNTriplesTripleDecoder(r io.Reader) TripleDecoder {
@@ -48,14 +48,14 @@ func (d *ntTripleDecoder) Next() (Triple, error) {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		
+
 		// Check triple count limit
 		if d.opts.MaxTriples > 0 && d.tripleCount >= d.opts.MaxTriples {
 			err := WrapParseErrorWithPosition("ntriples", line, d.lineNum, 0, -1, ErrTripleLimitExceeded)
 			d.err = err
 			return Triple{}, err
 		}
-		
+
 		triple, err := parseNTTripleLine(line)
 		if err != nil {
 			err = WrapParseErrorWithPosition("ntriples", line, d.lineNum, 0, -1, err)
@@ -74,11 +74,11 @@ func (d *ntTripleDecoder) Close() error {
 
 // Quad decoder for N-Quads
 type ntQuadDecoder struct {
-	reader      *bufio.Reader
-	err         error
-	opts        DecodeOptions
-	lineNum     int    // Current line number (1-based)
-	quadCount   int64  // Number of quads processed
+	reader    *bufio.Reader
+	err       error
+	opts      DecodeOptions
+	lineNum   int   // Current line number (1-based)
+	quadCount int64 // Number of quads processed
 }
 
 func newNQuadsQuadDecoder(r io.Reader) QuadDecoder {
@@ -113,14 +113,14 @@ func (d *ntQuadDecoder) Next() (Quad, error) {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		
+
 		// Check quad count limit
 		if d.opts.MaxTriples > 0 && d.quadCount >= d.opts.MaxTriples {
 			err := WrapParseErrorWithPosition("nquads", line, d.lineNum, 0, -1, ErrTripleLimitExceeded)
 			d.err = err
 			return Quad{}, err
 		}
-		
+
 		quad, err := parseNTQuadLine(line)
 		if err != nil {
 			err = WrapParseErrorWithPosition("nquads", line, d.lineNum, 0, -1, err)

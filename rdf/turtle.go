@@ -61,6 +61,7 @@ type TurtleParseOptions struct {
 	BaseIRI         string
 	AllowQuoted     bool
 	DebugStatements bool
+	MaxDepth        int // Maximum nesting depth (0 = use default, negative = unlimited)
 }
 
 func parseTurtleStatement(prefixes map[string]string, baseIRI string, allowQuoted bool, debugStatements bool, line string) ([]Triple, error) {
@@ -84,6 +85,10 @@ func parseTurtleTripleLine(prefixes map[string]string, baseIRI string, allowQuot
 }
 
 func parseTurtleTripleLineWithOptions(opts TurtleParseOptions, line string) ([]Triple, error) {
+	maxDepth := opts.MaxDepth
+	if maxDepth == 0 {
+		maxDepth = DefaultMaxDepth
+	}
 	cursor := &turtleCursor{
 		input:                      line,
 		prefixes:                   opts.Prefixes,
@@ -92,6 +97,7 @@ func parseTurtleTripleLineWithOptions(opts TurtleParseOptions, line string) ([]T
 		blankNodeCounter:           0,
 		allowQuotedTripleStatement: opts.AllowQuoted,
 		debugStatements:            opts.DebugStatements,
+		maxDepth:                   maxDepth,
 	}
 	subject, err := cursor.parseSubject()
 	if err != nil {
@@ -162,6 +168,7 @@ type turtleCursor struct {
 	allowQuotedTripleStatement bool
 	lastTermReified            bool
 	debugStatements            bool
+	maxDepth                   int // Maximum nesting depth (0 = use default, negative = unlimited)
 }
 
 func (c *turtleCursor) skipWS() {
@@ -271,13 +278,21 @@ func (c *turtleCursor) parsePredicate() (IRI, error) {
 
 func (c *turtleCursor) parseObject() (Term, error) {
 	// parseTerm will skip whitespace, so we don't need to do it here
-	return c.parseTerm(true)
+	return c.parseTermWithDepth(true, 0)
+}
+
+func (c *turtleCursor) parseObjectWithDepth(depth int) (Term, error) {
+	return c.parseTermWithDepth(true, depth)
 }
 
 func (c *turtleCursor) parseObjectList(subject Term, predicate IRI) ([]Triple, bool, error) {
+	return c.parseObjectListWithDepth(subject, predicate, 0)
+}
+
+func (c *turtleCursor) parseObjectListWithDepth(subject Term, predicate IRI, depth int) ([]Triple, bool, error) {
 	var triples []Triple
 	for {
-		object, err := c.parseObject()
+		object, err := c.parseObjectWithDepth(depth)
 		if err != nil {
 			return nil, false, err
 		}
@@ -344,7 +359,7 @@ func (c *turtleCursor) parsePredicateObjectList(subject Term) ([]Triple, error) 
 		}
 
 		// Parse objectList (comma-separated objects)
-		objectTriples, ended, err := c.parseObjectList(subject, predicate)
+		objectTriples, ended, err := c.parseObjectListWithDepth(subject, predicate, 0)
 		if err != nil {
 			return nil, err
 		}
@@ -395,13 +410,17 @@ func (c *turtleCursor) parsePredicateObjectList(subject Term) ([]Triple, error) 
 }
 
 func (c *turtleCursor) parseTerm(allowLiteral bool) (Term, error) {
+	return c.parseTermWithDepth(allowLiteral, 0)
+}
+
+func (c *turtleCursor) parseTermWithDepth(allowLiteral bool, depth int) (Term, error) {
 	c.skipWS()
 	c.lastTermBlankNodeList = false
 	c.lastTermReified = false
 	if c.pos >= len(c.input) {
 		return nil, c.errorf("unexpected end of line")
 	}
-	if term, ok, err := c.tryParseTermByPrefix(allowLiteral); ok || err != nil {
+	if term, ok, err := c.tryParseTermByPrefix(allowLiteral, depth); ok || err != nil {
 		return term, err
 	}
 	// Check for numeric literal or boolean literal
@@ -416,7 +435,7 @@ func (c *turtleCursor) parseTerm(allowLiteral bool) (Term, error) {
 	return c.parsePrefixedName()
 }
 
-func (c *turtleCursor) tryParseTermByPrefix(allowLiteral bool) (Term, bool, error) {
+func (c *turtleCursor) tryParseTermByPrefix(allowLiteral bool, depth int) (Term, bool, error) {
 	switch {
 	case strings.HasPrefix(c.input[c.pos:], "<<"):
 		term, err := c.parseTripleTerm()
@@ -428,10 +447,10 @@ func (c *turtleCursor) tryParseTermByPrefix(allowLiteral bool) (Term, bool, erro
 		term, err := c.parseBlankNode()
 		return term, true, err
 	case c.input[c.pos] == '[':
-		term, err := c.parseBlankNodePropertyList()
+		term, err := c.parseBlankNodePropertyListWithDepth(depth)
 		return term, true, err
 	case c.input[c.pos] == '(':
-		term, err := c.parseCollection()
+		term, err := c.parseCollectionWithDepth(depth)
 		return term, true, err
 	case strings.HasPrefix(c.input[c.pos:], "\"\"\""):
 		if !allowLiteral {
@@ -1188,6 +1207,14 @@ func (c *turtleCursor) newBlankNode() BlankNode {
 // parseCollection parses a collection (object*) and returns the head blank node.
 // It also generates rdf:first/rdf:rest triples and stores them in expansionTriples.
 func (c *turtleCursor) parseCollection() (Term, error) {
+	return c.parseCollectionWithDepth(0)
+}
+
+func (c *turtleCursor) parseCollectionWithDepth(depth int) (Term, error) {
+	// Check depth limit
+	if c.maxDepth > 0 && depth >= c.maxDepth {
+		return nil, c.errorf("nesting depth exceeded: %d", c.maxDepth)
+	}
 	if !c.consume('(') {
 		return nil, c.errorf("expected '('")
 	}
@@ -1209,7 +1236,7 @@ func (c *turtleCursor) parseCollection() (Term, error) {
 			c.pos++
 			break
 		}
-		obj, err := c.parseTerm(true)
+		obj, err := c.parseTermWithDepth(true, depth+1)
 		if err != nil {
 			return nil, err
 		}
@@ -1233,6 +1260,14 @@ func (c *turtleCursor) parseCollection() (Term, error) {
 // parseBlankNodePropertyList parses [predicateObjectList] and returns a blank node.
 // It also generates triples from the predicateObjectList and stores them in expansionTriples.
 func (c *turtleCursor) parseBlankNodePropertyList() (Term, error) {
+	return c.parseBlankNodePropertyListWithDepth(0)
+}
+
+func (c *turtleCursor) parseBlankNodePropertyListWithDepth(depth int) (Term, error) {
+	// Check depth limit
+	if c.maxDepth > 0 && depth >= c.maxDepth {
+		return nil, c.errorf("nesting depth exceeded: %d", c.maxDepth)
+	}
 	if !c.consume('[') {
 		return nil, c.errorf("expected '['")
 	}
@@ -1257,7 +1292,7 @@ func (c *turtleCursor) parseBlankNodePropertyList() (Term, error) {
 
 		// Parse objectList (comma-separated objects)
 		for {
-			object, err := c.parseObject()
+			object, err := c.parseObjectWithDepth(depth + 1)
 			if err != nil {
 				return nil, err
 			}

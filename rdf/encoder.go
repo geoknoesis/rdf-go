@@ -100,10 +100,11 @@ func NewTripleDecoder(r io.Reader, format TripleFormat) (TripleDecoder, error) {
 
 // NewTripleDecoderWithOptions creates a decoder using functional options.
 // Example:
-//   dec, err := NewTripleDecoderWithOptions(r, TripleFormatTurtle,
-//       WithMaxLineBytes(64<<10),
-//       WithMaxDepth(50),
-//       WithContext(ctx))
+//
+//	dec, err := NewTripleDecoderWithOptions(r, TripleFormatTurtle,
+//	    WithMaxLineBytes(64<<10),
+//	    WithMaxDepth(50),
+//	    WithContext(ctx))
 func NewTripleDecoderWithOptions(r io.Reader, format TripleFormat, opts ...DecoderOption) (TripleDecoder, error) {
 	options := DefaultDecodeOptions()
 	for _, opt := range opts {
@@ -139,10 +140,11 @@ func NewQuadDecoder(r io.Reader, format QuadFormat) (QuadDecoder, error) {
 
 // NewQuadDecoderWithOptions creates a decoder using functional options.
 // Example:
-//   dec, err := NewQuadDecoderWithOptions(r, QuadFormatTriG,
-//       WithMaxLineBytes(64<<10),
-//       WithMaxDepth(50),
-//       WithContext(ctx))
+//
+//	dec, err := NewQuadDecoderWithOptions(r, QuadFormatTriG,
+//	    WithMaxLineBytes(64<<10),
+//	    WithMaxDepth(50),
+//	    WithContext(ctx))
 func NewQuadDecoderWithOptions(r io.Reader, format QuadFormat, opts ...DecoderOption) (QuadDecoder, error) {
 	options := DefaultDecodeOptions()
 	for _, opt := range opts {

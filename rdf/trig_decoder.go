@@ -476,6 +476,7 @@ func (d *trigQuadDecoder) parseTripleLine(line string) ([]Quad, error) {
 		BaseIRI:         d.baseIRI,
 		AllowQuoted:     d.allowQuotedTripleStatement,
 		DebugStatements: debugStatements,
+		MaxDepth:        d.opts.MaxDepth,
 	}
 	triples, err := parseTurtleTripleLineWithOptions(opts, line)
 	if err != nil {

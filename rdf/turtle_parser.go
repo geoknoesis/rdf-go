@@ -16,7 +16,7 @@ type turtleParser struct {
 	pending                    []Triple
 	expansionTriples           []Triple // Triples from collections and blank node lists
 	blankNodeCounter           int
-	tripleCount                int64    // Number of triples processed
+	tripleCount                int64 // Number of triples processed
 	err                        error
 }
 
