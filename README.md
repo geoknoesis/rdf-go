@@ -63,6 +63,78 @@ if err != nil {
 }
 ```
 
+## Parse vs Reader: When to Use Which?
+
+The library provides two ways to read RDF data: `Parse` (push model) and `NewReader` (pull model). Understanding the difference helps you choose the right approach for your use case.
+
+### Parse (Push Model) - Recommended for Most Cases
+
+`Parse` uses a **push model** where the library calls your handler function for each statement as it's parsed. This is simpler and more convenient for most use cases.
+
+**Characteristics:**
+- **Push model**: Library pushes statements to your handler function
+- **Simpler API**: Just provide a handler function
+- **Automatic resource management**: No need to manually close readers
+- **Context support**: Built-in context cancellation support
+- **Best for**: Most common use cases, simple processing, collecting statements
+
+**When to use Parse:**
+- Processing all statements sequentially
+- Collecting statements into a slice or map
+- Simple filtering or transformation
+- When you want the simplest API
+
+**Example:**
+```go
+err := rdf.Parse(ctx, reader, rdf.FormatAuto, func(s rdf.Statement) error {
+    // Process each statement as it arrives
+    return nil
+})
+```
+
+### Reader (Pull Model) - More Control
+
+`NewReader` uses a **pull model** where you explicitly request the next statement by calling `Next()`. This gives you more control over the parsing process.
+
+**Characteristics:**
+- **Pull model**: You pull statements when ready by calling `Next()`
+- **More control**: You decide when to read the next statement
+- **Manual resource management**: Must call `Close()` when done
+- **Better for complex scenarios**: Conditional reading, early termination, custom buffering
+
+**When to use Reader:**
+- Need to conditionally skip statements
+- Want to read a specific number of statements
+- Need to interleave reading with other I/O operations
+- Implementing custom buffering or batching
+- More complex control flow requirements
+
+**Example:**
+```go
+dec, err := rdf.NewReader(reader, rdf.FormatTurtle)
+defer dec.Close()
+for {
+    stmt, err := dec.Next()
+    if err == io.EOF {
+        break
+    }
+    // Process statement when you're ready
+}
+```
+
+### Key Differences Summary
+
+| Feature | Parse | Reader |
+|---------|-------|--------|
+| **Model** | Push (handler function) | Pull (Next() method) |
+| **API Complexity** | Simpler | More explicit |
+| **Resource Management** | Automatic | Manual (must Close) |
+| **Control Flow** | Library-driven | Your code controls |
+| **Context Support** | Built-in | Via options |
+| **Best For** | Most use cases | Complex scenarios |
+
+**Recommendation**: Start with `Parse` for simplicity. Use `Reader` when you need more control over the parsing process.
+
 ### Decode (Pull Style)
 
 For more control over the parsing process, use `NewReader` with a pull-style API. This gives you explicit control over when to read the next statement:
