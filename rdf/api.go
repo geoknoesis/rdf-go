@@ -31,16 +31,22 @@ type Option func(*Options)
 type Options struct {
 	// Context for cancellation and timeouts
 	Context context.Context
-	
+
 	// Security limits for untrusted input
 	MaxLineBytes      int
 	MaxStatementBytes int
 	MaxDepth          int
 	MaxTriples        int64
-	
+
 	// Format-specific options
 	AllowQuotedTripleStatement bool
 	DebugStatements            bool
+
+	// IRI validation
+	StrictIRIValidation bool // Enable strict IRI validation according to RFC 3987
+
+	// RDF/XML container expansion
+	ExpandRDFXMLContainers bool // Enable RDF/XML container membership expansion (default: true)
 }
 
 // NewReader creates a reader for the specified format.
@@ -51,7 +57,7 @@ func NewReader(r io.Reader, format Format, opts ...Option) (Reader, error) {
 	for _, opt := range opts {
 		opt(&options)
 	}
-	
+
 	// Auto-detect format if needed
 	if format == FormatAuto {
 		detected, reader, ok := detectFormat(r)
@@ -61,7 +67,7 @@ func NewReader(r io.Reader, format Format, opts ...Option) (Reader, error) {
 		format = detected
 		r = reader // Use reader that includes buffered bytes
 	}
-	
+
 	return newDecoder(r, format, options)
 }
 
@@ -73,18 +79,18 @@ func Parse(ctx context.Context, r io.Reader, format Format, handler Handler, opt
 	for _, opt := range opts {
 		opt(&options)
 	}
-	
+
 	reader, err := NewReader(r, format, opts...)
 	if err != nil {
 		return err
 	}
 	defer reader.Close()
-	
+
 	for {
 		if ctx != nil && ctx.Err() != nil {
 			return ctx.Err()
 		}
-		
+
 		stmt, err := reader.Next()
 		if err == io.EOF {
 			return nil
@@ -92,26 +98,11 @@ func Parse(ctx context.Context, r io.Reader, format Format, handler Handler, opt
 		if err != nil {
 			return err
 		}
-		
+
 		if err := handler(stmt); err != nil {
 			return err
 		}
 	}
-}
-
-// ReadAll reads all statements from the reader into memory.
-// This is a convenience function for small datasets.
-// For large inputs, use Parse or NewReader for streaming.
-func ReadAll(ctx context.Context, r io.Reader, format Format, opts ...Option) ([]Statement, error) {
-	var stmts []Statement
-	err := Parse(ctx, r, format, func(s Statement) error {
-		stmts = append(stmts, s)
-		return nil
-	}, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return stmts, nil
 }
 
 // NewWriter creates a writer for the specified format.
@@ -120,24 +111,8 @@ func NewWriter(w io.Writer, format Format, opts ...Option) (Writer, error) {
 	for _, opt := range opts {
 		opt(&options)
 	}
-	
-	return newEncoder(w, format, options)
-}
 
-// WriteAll writes all statements to the writer.
-func WriteAll(ctx context.Context, w io.Writer, format Format, stmts []Statement, opts ...Option) error {
-	writer, err := NewWriter(w, format, opts...)
-	if err != nil {
-		return err
-	}
-	defer writer.Close()
-	
-	for _, s := range stmts {
-		if err := writer.Write(s); err != nil {
-			return err
-		}
-	}
-	return writer.Flush()
+	return newEncoder(w, format, options)
 }
 
 // Option helpers
@@ -188,19 +163,53 @@ func OptSafeLimits() Option {
 	}
 }
 
+// OptStrictIRIValidation enables strict IRI validation according to RFC 3987.
+// When enabled, all IRIs are validated for correct syntax during parsing.
+// Default is lenient (no validation) for backward compatibility.
+//
+// Note: This option affects parser behavior. Invalid IRIs will cause parse errors
+// when this option is enabled.
+func OptStrictIRIValidation() Option {
+	return func(opts *Options) {
+		opts.StrictIRIValidation = true
+	}
+}
+
+// OptExpandRDFXMLContainers enables RDF/XML container membership expansion.
+// When enabled (default), container elements (rdf:Bag, rdf:Seq, rdf:Alt) automatically
+// generate container membership properties (rdf:_1, rdf:_2, etc.) from rdf:li elements.
+//
+// Container expansion is enabled by default. Use OptDisableRDFXMLContainerExpansion()
+// to disable it if you want to preserve the original container structure.
+func OptExpandRDFXMLContainers() Option {
+	return func(opts *Options) {
+		opts.ExpandRDFXMLContainers = true
+	}
+}
+
+// OptDisableRDFXMLContainerExpansion disables RDF/XML container membership expansion.
+// When disabled, container elements are parsed as regular node elements without
+// automatically generating container membership properties.
+func OptDisableRDFXMLContainerExpansion() Option {
+	return func(opts *Options) {
+		opts.ExpandRDFXMLContainers = false
+	}
+}
+
 // Internal helpers
 
 func defaultOptions() Options {
 	return Options{
-		MaxLineBytes:      DefaultMaxLineBytes,
-		MaxStatementBytes: DefaultMaxStatementBytes,
-		MaxDepth:          DefaultMaxDepth,
-		MaxTriples:        DefaultMaxTriples,
+		MaxLineBytes:           DefaultMaxLineBytes,
+		MaxStatementBytes:      DefaultMaxStatementBytes,
+		MaxDepth:               DefaultMaxDepth,
+		MaxTriples:             DefaultMaxTriples,
+		ExpandRDFXMLContainers: true, // Default: enable container expansion
 	}
 }
 
 func safeOptions() Options {
-	safe := SafeDecodeOptions()
+	safe := safeDecodeOptions()
 	return Options{
 		MaxLineBytes:      safe.MaxLineBytes,
 		MaxStatementBytes: safe.MaxStatementBytes,
@@ -213,33 +222,34 @@ func safeOptions() Options {
 // It reads a sample and returns both the detected format and a reader that includes
 // the buffered bytes so the decoder can read from the beginning.
 func detectFormat(r io.Reader) (Format, io.Reader, bool) {
-	buf := make([]byte, 512)
+	const formatDetectionBufferSize = 512
+	buf := make([]byte, formatDetectionBufferSize)
 	n, err := r.Read(buf)
 	if err != nil && err != io.EOF {
 		return FormatAuto, r, false
 	}
-	
+
 	sample := buf[:n]
-	
+
 	// Try quad formats first
-	if quadFormat, ok := DetectQuadFormat(bytes.NewReader(sample)); ok {
+	if quadFormat, ok := detectQuadFormat(bytes.NewReader(sample)); ok {
 		// Combine buffered bytes with remaining reader
 		return quadFormat, io.MultiReader(bytes.NewReader(sample), r), true
 	}
-	
+
 	// Try triple formats
-	if tripleFormat, ok := DetectFormat(bytes.NewReader(sample)); ok {
+	if tripleFormat, ok := detectFormatFromSample(bytes.NewReader(sample)); ok {
 		// Combine buffered bytes with remaining reader
 		return tripleFormat, io.MultiReader(bytes.NewReader(sample), r), true
 	}
-	
+
 	return FormatAuto, io.MultiReader(bytes.NewReader(sample), r), false
 }
 
 // newDecoder creates a reader for the specified format.
 func newDecoder(r io.Reader, format Format, opts Options) (Reader, error) {
-	// Convert Options to DecodeOptions for internal use
-	decodeOpts := DecodeOptions{
+	// Convert Options to decodeOptions for internal use
+	decodeOpts := decodeOptions{
 		Context:                    opts.Context,
 		MaxLineBytes:               opts.MaxLineBytes,
 		MaxStatementBytes:          opts.MaxStatementBytes,
@@ -247,8 +257,10 @@ func newDecoder(r io.Reader, format Format, opts Options) (Reader, error) {
 		MaxTriples:                 opts.MaxTriples,
 		AllowQuotedTripleStatement: opts.AllowQuotedTripleStatement,
 		DebugStatements:            opts.DebugStatements,
+		StrictIRIValidation:        opts.StrictIRIValidation,
+		ExpandRDFXMLContainers:     opts.ExpandRDFXMLContainers,
 	}
-	
+
 	switch format {
 	case FormatTurtle:
 		dec, err := newTripleDecoderWithOptions(r, "turtle", decodeOpts)
@@ -343,14 +355,14 @@ type quadReaderAdapter struct {
 
 func (a *quadReaderAdapter) Next() (Statement, error) {
 	if a.isTriple {
-		dec := a.dec.(TripleDecoder)
+		dec := a.dec.(tripleDecoder)
 		triple, err := dec.Next()
 		if err != nil {
 			return Statement{}, err
 		}
 		return Statement{S: triple.S, P: triple.P, O: triple.O, G: nil}, nil
 	} else {
-		dec := a.dec.(QuadDecoder)
+		dec := a.dec.(quadDecoder)
 		quad, err := dec.Next()
 		if err != nil {
 			return Statement{}, err
@@ -361,9 +373,9 @@ func (a *quadReaderAdapter) Next() (Statement, error) {
 
 func (a *quadReaderAdapter) Close() error {
 	if a.isTriple {
-		return a.dec.(TripleDecoder).Close()
+		return a.dec.(tripleDecoder).Close()
 	}
-	return a.dec.(QuadDecoder).Close()
+	return a.dec.(quadDecoder).Close()
 }
 
 // quadWriterAdapter adapts TripleEncoder/QuadEncoder to unified Writer interface.
@@ -374,25 +386,24 @@ type quadWriterAdapter struct {
 
 func (a *quadWriterAdapter) Write(s Statement) error {
 	if a.isTriple {
-		enc := a.enc.(TripleEncoder)
+		enc := a.enc.(tripleEncoder)
 		return enc.Write(s.AsTriple())
 	} else {
-		enc := a.enc.(QuadEncoder)
+		enc := a.enc.(quadEncoder)
 		return enc.Write(s.AsQuad())
 	}
 }
 
 func (a *quadWriterAdapter) Flush() error {
 	if a.isTriple {
-		return a.enc.(TripleEncoder).Flush()
+		return a.enc.(tripleEncoder).Flush()
 	}
-	return a.enc.(QuadEncoder).Flush()
+	return a.enc.(quadEncoder).Flush()
 }
 
 func (a *quadWriterAdapter) Close() error {
 	if a.isTriple {
-		return a.enc.(TripleEncoder).Close()
+		return a.enc.(tripleEncoder).Close()
 	}
-	return a.enc.(QuadEncoder).Close()
+	return a.enc.(quadEncoder).Close()
 }
-

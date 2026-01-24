@@ -5,79 +5,79 @@ import (
 	"io"
 )
 
-// TripleEncoder streams RDF triples to an output.
+// tripleEncoder streams RDF triples to an output.
 // This interface is used internally by the unified Writer adapter.
-type TripleEncoder interface {
+type tripleEncoder interface {
 	Write(Triple) error
 	Flush() error
 	Close() error
 }
 
-// QuadEncoder streams RDF quads to an output.
+// quadEncoder streams RDF quads to an output.
 // This interface is used internally by the unified Writer adapter.
-type QuadEncoder interface {
+type quadEncoder interface {
 	Write(Quad) error
 	Flush() error
 	Close() error
 }
 
-// DecoderOption configures decoder behavior using functional options.
+// decoderOption configures decoder behavior using functional options.
 // This is kept for internal use with the old decoder implementations.
-type DecoderOption func(*DecodeOptions)
+type decoderOption func(*decodeOptions)
 
-// WithMaxLineBytes sets the maximum line size limit.
-func WithMaxLineBytes(maxBytes int) DecoderOption {
-	return func(opts *DecodeOptions) {
+// withMaxLineBytes sets the maximum line size limit.
+func withMaxLineBytes(maxBytes int) decoderOption {
+	return func(opts *decodeOptions) {
 		opts.MaxLineBytes = maxBytes
 	}
 }
 
-// WithMaxStatementBytes sets the maximum statement size limit.
-func WithMaxStatementBytes(maxBytes int) DecoderOption {
-	return func(opts *DecodeOptions) {
+// withMaxStatementBytes sets the maximum statement size limit.
+func withMaxStatementBytes(maxBytes int) decoderOption {
+	return func(opts *decodeOptions) {
 		opts.MaxStatementBytes = maxBytes
 	}
 }
 
-// WithMaxDepth sets the maximum nesting depth limit.
-func WithMaxDepth(maxDepth int) DecoderOption {
-	return func(opts *DecodeOptions) {
+// withMaxDepth sets the maximum nesting depth limit.
+func withMaxDepth(maxDepth int) decoderOption {
+	return func(opts *decodeOptions) {
 		opts.MaxDepth = maxDepth
 	}
 }
 
-// WithMaxTriples sets the maximum number of triples/quads to process.
-func WithMaxTriples(maxTriples int64) DecoderOption {
-	return func(opts *DecodeOptions) {
+// withMaxTriples sets the maximum number of triples/quads to process.
+func withMaxTriples(maxTriples int64) decoderOption {
+	return func(opts *decodeOptions) {
 		opts.MaxTriples = maxTriples
 	}
 }
 
-// WithContext sets the context for cancellation and timeouts.
-func WithContext(ctx context.Context) DecoderOption {
-	return func(opts *DecodeOptions) {
+// withContext sets the context for cancellation and timeouts.
+func withContext(ctx context.Context) decoderOption {
+	return func(opts *decodeOptions) {
 		opts.Context = ctx
 	}
 }
 
-// WithAllowQuotedTripleStatement enables quoted triple statements in Turtle/TriG.
-func WithAllowQuotedTripleStatement(allow bool) DecoderOption {
-	return func(opts *DecodeOptions) {
+// withAllowQuotedTripleStatement enables quoted triple statements in Turtle/TriG.
+func withAllowQuotedTripleStatement(allow bool) decoderOption {
+	return func(opts *decodeOptions) {
 		opts.AllowQuotedTripleStatement = allow
 	}
 }
 
-// WithDebugStatements enables debug statement wrapping in errors.
-func WithDebugStatements(debug bool) DecoderOption {
-	return func(opts *DecodeOptions) {
+// withDebugStatements enables debug statement wrapping in errors.
+func withDebugStatements(debug bool) decoderOption {
+	return func(opts *decodeOptions) {
 		opts.DebugStatements = debug
 	}
 }
 
-// WithSafeLimits applies safe limits suitable for untrusted input.
-func WithSafeLimits() DecoderOption {
-	return func(opts *DecodeOptions) {
-		safe := SafeDecodeOptions()
+// withSafeLimits applies safe limits suitable for untrusted input.
+func withSafeLimits() decoderOption {
+	return func(opts *decodeOptions) {
+		safe := safeDecodeOptions()
 		opts.MaxLineBytes = safe.MaxLineBytes
 		opts.MaxStatementBytes = safe.MaxStatementBytes
 		opts.MaxDepth = safe.MaxDepth
@@ -85,68 +85,59 @@ func WithSafeLimits() DecoderOption {
 	}
 }
 
-// DecodeOptionsToOptions converts a DecodeOptions struct to functional options.
-func DecodeOptionsToOptions(opts DecodeOptions) []DecoderOption {
-	return []DecoderOption{
-		func(o *DecodeOptions) {
-			*o = opts
-		},
-	}
-}
-
 // newTripleDecoderWithOptions creates a decoder using the old format types (internal use only).
-func newTripleDecoderWithOptions(r io.Reader, format string, opts DecodeOptions) (TripleDecoder, error) {
+func newTripleDecoderWithOptions(r io.Reader, format string, opts decodeOptions) (tripleDecoder, error) {
 	decodeOpts := normalizeDecodeOptions(opts)
 	switch format {
 	case "turtle":
-		return newTurtleTripleDecoderWithOptions(r, decodeOpts), nil
+		return newTurtletripleDecoderWithOptions(r, decodeOpts), nil
 	case "ntriples":
-		return newNTriplesTripleDecoderWithOptions(r, decodeOpts), nil
+		return newNTriplestripleDecoderWithOptions(r, decodeOpts), nil
 	case "rdfxml":
-		return newRDFXMLTripleDecoder(r), nil
+		return newRDFXMLtripleDecoderWithOptions(r, decodeOpts), nil
 	case "jsonld":
-		return newJSONLDTripleDecoder(r), nil
+		return newJSONLDtripleDecoder(r), nil
 	default:
 		return nil, ErrUnsupportedFormat
 	}
 }
 
 // newQuadDecoderWithOptions creates a decoder using the old format types (internal use only).
-func newQuadDecoderWithOptions(r io.Reader, format string, opts DecodeOptions) (QuadDecoder, error) {
+func newQuadDecoderWithOptions(r io.Reader, format string, opts decodeOptions) (quadDecoder, error) {
 	decodeOpts := normalizeDecodeOptions(opts)
 	switch format {
 	case "trig":
-		return newTriGQuadDecoderWithOptions(r, decodeOpts), nil
+		return newTriGquadDecoderWithOptions(r, decodeOpts), nil
 	case "nquads":
-		return newNQuadsQuadDecoderWithOptions(r, decodeOpts), nil
+		return newNQuadsquadDecoderWithOptions(r, decodeOpts), nil
 	default:
 		return nil, ErrUnsupportedFormat
 	}
 }
 
 // newTripleEncoder creates an encoder using the old format types (internal use only).
-func newTripleEncoder(w io.Writer, format string) (TripleEncoder, error) {
+func newTripleEncoder(w io.Writer, format string) (tripleEncoder, error) {
 	switch format {
 	case "turtle":
-		return newTurtleTripleEncoder(w), nil
+		return newTurtletripleEncoder(w), nil
 	case "ntriples":
-		return newNTriplesTripleEncoder(w), nil
+		return newNTriplestripleEncoder(w), nil
 	case "rdfxml":
-		return newRDFXMLTripleEncoder(w), nil
+		return newRDFXMLtripleEncoder(w), nil
 	case "jsonld":
-		return newJSONLDTripleEncoder(w), nil
+		return newJSONLDtripleEncoder(w), nil
 	default:
 		return nil, ErrUnsupportedFormat
 	}
 }
 
 // newQuadEncoder creates an encoder using the old format types (internal use only).
-func newQuadEncoder(w io.Writer, format string) (QuadEncoder, error) {
+func newQuadEncoder(w io.Writer, format string) (quadEncoder, error) {
 	switch format {
 	case "trig":
-		return newTriGQuadEncoder(w), nil
+		return newTriGquadEncoder(w), nil
 	case "nquads":
-		return newNQuadsQuadEncoder(w), nil
+		return newNQuadsquadEncoder(w), nil
 	default:
 		return nil, ErrUnsupportedFormat
 	}

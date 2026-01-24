@@ -9,13 +9,13 @@ type Format string
 const (
 	// FormatAuto enables automatic format detection from input.
 	FormatAuto Format = ""
-	
+
 	// Triple formats
 	FormatTurtle   Format = "turtle"
 	FormatNTriples Format = "ntriples"
 	FormatRDFXML   Format = "rdfxml"
 	FormatJSONLD   Format = "jsonld"
-	
+
 	// Quad formats
 	FormatTriG   Format = "trig"
 	FormatNQuads Format = "nquads"

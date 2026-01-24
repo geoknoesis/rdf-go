@@ -8,20 +8,20 @@ import (
 )
 
 // Triple decoder for N-Triples
-type ntTripleDecoder struct {
+type nttripleDecoder struct {
 	reader      *bufio.Reader
 	err         error
-	opts        DecodeOptions
+	opts        decodeOptions
 	lineNum     int   // Current line number (1-based)
 	tripleCount int64 // Number of triples processed
 }
 
-func newNTriplesTripleDecoder(r io.Reader) TripleDecoder {
-	return newNTriplesTripleDecoderWithOptions(r, DefaultDecodeOptions())
+func newNTriplestripleDecoder(r io.Reader) tripleDecoder {
+	return newNTriplestripleDecoderWithOptions(r, defaultDecodeOptions())
 }
 
-func newNTriplesTripleDecoderWithOptions(r io.Reader, opts DecodeOptions) TripleDecoder {
-	return &ntTripleDecoder{
+func newNTriplestripleDecoderWithOptions(r io.Reader, opts decodeOptions) tripleDecoder {
+	return &nttripleDecoder{
 		reader:      bufio.NewReader(r),
 		opts:        normalizeDecodeOptions(opts),
 		lineNum:     0,
@@ -29,7 +29,7 @@ func newNTriplesTripleDecoderWithOptions(r io.Reader, opts DecodeOptions) Triple
 	}
 }
 
-func (d *ntTripleDecoder) Next() (Triple, error) {
+func (d *nttripleDecoder) Next() (Triple, error) {
 	for {
 		if err := checkDecodeContext(d.opts.Context); err != nil {
 			d.err = err
@@ -51,14 +51,14 @@ func (d *ntTripleDecoder) Next() (Triple, error) {
 
 		// Check triple count limit
 		if d.opts.MaxTriples > 0 && d.tripleCount >= d.opts.MaxTriples {
-			err := WrapParseErrorWithPosition("ntriples", line, d.lineNum, 0, -1, ErrTripleLimitExceeded)
+			err := wrapParseErrorWithPosition("ntriples", line, d.lineNum, 0, -1, ErrTripleLimitExceeded)
 			d.err = err
 			return Triple{}, err
 		}
 
 		triple, err := parseNTTripleLine(line)
 		if err != nil {
-			err = WrapParseErrorWithPosition("ntriples", line, d.lineNum, 0, -1, err)
+			err = wrapParseErrorWithPosition("ntriples", line, d.lineNum, 0, -1, err)
 			d.err = err
 			return Triple{}, err
 		}
@@ -67,26 +67,26 @@ func (d *ntTripleDecoder) Next() (Triple, error) {
 	}
 }
 
-func (d *ntTripleDecoder) Err() error { return d.err }
-func (d *ntTripleDecoder) Close() error {
+func (d *nttripleDecoder) Err() error { return d.err }
+func (d *nttripleDecoder) Close() error {
 	return nil
 }
 
 // Quad decoder for N-Quads
-type ntQuadDecoder struct {
+type ntquadDecoder struct {
 	reader    *bufio.Reader
 	err       error
-	opts      DecodeOptions
+	opts      decodeOptions
 	lineNum   int   // Current line number (1-based)
 	quadCount int64 // Number of quads processed
 }
 
-func newNQuadsQuadDecoder(r io.Reader) QuadDecoder {
-	return newNQuadsQuadDecoderWithOptions(r, DefaultDecodeOptions())
+func newNQuadsquadDecoder(r io.Reader) quadDecoder {
+	return newNQuadsquadDecoderWithOptions(r, defaultDecodeOptions())
 }
 
-func newNQuadsQuadDecoderWithOptions(r io.Reader, opts DecodeOptions) QuadDecoder {
-	return &ntQuadDecoder{
+func newNQuadsquadDecoderWithOptions(r io.Reader, opts decodeOptions) quadDecoder {
+	return &ntquadDecoder{
 		reader:    bufio.NewReader(r),
 		opts:      normalizeDecodeOptions(opts),
 		lineNum:   0,
@@ -94,7 +94,7 @@ func newNQuadsQuadDecoderWithOptions(r io.Reader, opts DecodeOptions) QuadDecode
 	}
 }
 
-func (d *ntQuadDecoder) Next() (Quad, error) {
+func (d *ntquadDecoder) Next() (Quad, error) {
 	for {
 		if err := checkDecodeContext(d.opts.Context); err != nil {
 			d.err = err
@@ -116,14 +116,14 @@ func (d *ntQuadDecoder) Next() (Quad, error) {
 
 		// Check quad count limit
 		if d.opts.MaxTriples > 0 && d.quadCount >= d.opts.MaxTriples {
-			err := WrapParseErrorWithPosition("nquads", line, d.lineNum, 0, -1, ErrTripleLimitExceeded)
+			err := wrapParseErrorWithPosition("nquads", line, d.lineNum, 0, -1, ErrTripleLimitExceeded)
 			d.err = err
 			return Quad{}, err
 		}
 
 		quad, err := parseNTQuadLine(line)
 		if err != nil {
-			err = WrapParseErrorWithPosition("nquads", line, d.lineNum, 0, -1, err)
+			err = wrapParseErrorWithPosition("nquads", line, d.lineNum, 0, -1, err)
 			d.err = err
 			return Quad{}, err
 		}
@@ -132,17 +132,17 @@ func (d *ntQuadDecoder) Next() (Quad, error) {
 	}
 }
 
-func (d *ntQuadDecoder) Err() error { return d.err }
-func (d *ntQuadDecoder) Close() error {
+func (d *ntquadDecoder) Err() error { return d.err }
+func (d *ntquadDecoder) Close() error {
 	return nil
 }
 
 // Shared readLine method
-func (d *ntTripleDecoder) readLine() (string, error) {
+func (d *nttripleDecoder) readLine() (string, error) {
 	return readLineWithLimit(d.reader, d.opts.MaxLineBytes)
 }
 
-func (d *ntQuadDecoder) readLine() (string, error) {
+func (d *ntquadDecoder) readLine() (string, error) {
 	return readLineWithLimit(d.reader, d.opts.MaxLineBytes)
 }
 func parseNTTripleLine(line string) (Triple, error) {
@@ -417,6 +417,10 @@ func (c *ntCursor) parseIRI() (IRI, error) {
 		return IRI{}, c.errorf("invalid IRI: relative IRI not allowed in N-Triples")
 	}
 
+	// Note: N-Triples already validates scheme presence above.
+	// If strict validation is enabled, perform additional RFC 3987 validation.
+	// For now, N-Triples validation is sufficient, but we could add more checks here.
+
 	return IRI{Value: value}, nil
 }
 
@@ -597,16 +601,16 @@ func isTermDelimiter(ch byte) bool {
 }
 
 // Triple encoder for N-Triples
-type ntTripleEncoder struct {
+type nttripleEncoder struct {
 	writer *bufio.Writer
 	err    error
 }
 
-func newNTriplesTripleEncoder(w io.Writer) TripleEncoder {
-	return &ntTripleEncoder{writer: bufio.NewWriter(w)}
+func newNTriplestripleEncoder(w io.Writer) tripleEncoder {
+	return &nttripleEncoder{writer: bufio.NewWriter(w)}
 }
 
-func (e *ntTripleEncoder) Write(t Triple) error {
+func (e *nttripleEncoder) Write(t Triple) error {
 	if e.err != nil {
 		return e.err
 	}
@@ -621,14 +625,14 @@ func (e *ntTripleEncoder) Write(t Triple) error {
 	return err
 }
 
-func (e *ntTripleEncoder) Flush() error {
+func (e *nttripleEncoder) Flush() error {
 	if e.err != nil {
 		return e.err
 	}
 	return e.writer.Flush()
 }
 
-func (e *ntTripleEncoder) Close() error {
+func (e *nttripleEncoder) Close() error {
 	if e.err != nil {
 		return e.err
 	}
@@ -641,16 +645,16 @@ func (e *ntTripleEncoder) Close() error {
 }
 
 // Quad encoder for N-Quads
-type ntQuadEncoder struct {
+type ntquadEncoder struct {
 	writer *bufio.Writer
 	err    error
 }
 
-func newNQuadsQuadEncoder(w io.Writer) QuadEncoder {
-	return &ntQuadEncoder{writer: bufio.NewWriter(w)}
+func newNQuadsquadEncoder(w io.Writer) quadEncoder {
+	return &ntquadEncoder{writer: bufio.NewWriter(w)}
 }
 
-func (e *ntQuadEncoder) Write(q Quad) error {
+func (e *ntquadEncoder) Write(q Quad) error {
 	if e.err != nil {
 		return e.err
 	}
@@ -672,14 +676,14 @@ func (e *ntQuadEncoder) Write(q Quad) error {
 	return err
 }
 
-func (e *ntQuadEncoder) Flush() error {
+func (e *ntquadEncoder) Flush() error {
 	if e.err != nil {
 		return e.err
 	}
 	return e.writer.Flush()
 }
 
-func (e *ntQuadEncoder) Close() error {
+func (e *ntquadEncoder) Close() error {
 	if e.err != nil {
 		return e.err
 	}

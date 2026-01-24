@@ -89,20 +89,6 @@ func ExampleParse() {
 	// 2
 }
 
-func ExampleReadAll() {
-	input := "<http://example.org/s> <http://example.org/p> <http://example.org/o> .\n" +
-		"<http://example.org/s2> <http://example.org/p2> <http://example.org/o2> .\n"
-	stmts, err := ReadAll(context.Background(), strings.NewReader(input), FormatNTriples)
-	if err != nil {
-		fmt.Println("error:", err)
-		return
-	}
-	fmt.Println(len(stmts))
-
-	// Output:
-	// 2
-}
-
 func ExampleTripleTerm() {
 	quoted := TripleTerm{
 		S: IRI{Value: "http://example.org/s"},
@@ -255,32 +241,4 @@ func ExampleEOF() {
 
 	// Output:
 	// eof
-}
-
-func ExampleWriteAll() {
-	stmts := []Statement{
-		{
-			S: IRI{Value: "http://example.org/s"},
-			P: IRI{Value: "http://example.org/p"},
-			O: IRI{Value: "http://example.org/o"},
-			G: nil,
-		},
-		{
-			S: IRI{Value: "http://example.org/s2"},
-			P: IRI{Value: "http://example.org/p2"},
-			O: IRI{Value: "http://example.org/o2"},
-			G: nil,
-		},
-	}
-	var buf bytes.Buffer
-	err := WriteAll(context.Background(), &buf, FormatNTriples, stmts)
-	if err != nil {
-		fmt.Println("error:", err)
-		return
-	}
-	fmt.Print(buf.String())
-
-	// Output:
-	// <http://example.org/s> <http://example.org/p> <http://example.org/o> .
-	// <http://example.org/s2> <http://example.org/p2> <http://example.org/o2> .
 }

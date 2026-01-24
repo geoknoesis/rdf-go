@@ -239,3 +239,5 @@ func generateMarkdown(results []formatResult, totalPass, totalFail, totalSkip in
 	return sb.String()
 }
 
+
+

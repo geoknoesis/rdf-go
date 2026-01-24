@@ -9,7 +9,7 @@ import (
 )
 
 // New quad decoder for TriG
-type trigQuadDecoder struct {
+type trigquadDecoder struct {
 	reader                     *bufio.Reader
 	err                        error
 	prefixes                   map[string]string
@@ -19,18 +19,18 @@ type trigQuadDecoder struct {
 	allowQuotedTripleStatement bool
 	inGraphBlock               bool
 	remainder                  string
-	opts                       DecodeOptions
+	opts                       decodeOptions
 }
 
-func newTriGQuadDecoder(r io.Reader) QuadDecoder {
-	return newTriGQuadDecoderWithOptions(r, DefaultDecodeOptions())
+func newTriGquadDecoder(r io.Reader) quadDecoder {
+	return newTriGquadDecoderWithOptions(r, defaultDecodeOptions())
 }
 
-func newTriGQuadDecoderWithOptions(r io.Reader, opts DecodeOptions) QuadDecoder {
+func newTriGquadDecoderWithOptions(r io.Reader, opts decodeOptions) quadDecoder {
 	if opts.AllowEnvOverrides && os.Getenv("TRIG_ALLOW_QT_STMT") != "" {
 		opts.AllowQuotedTripleStatement = true
 	}
-	return &trigQuadDecoder{
+	return &trigquadDecoder{
 		reader:                     bufio.NewReader(r),
 		prefixes:                   map[string]string{},
 		allowQuotedTripleStatement: opts.AllowQuotedTripleStatement,
@@ -38,7 +38,12 @@ func newTriGQuadDecoderWithOptions(r io.Reader, opts DecodeOptions) QuadDecoder 
 	}
 }
 
-func (d *trigQuadDecoder) Next() (Quad, error) {
+// shouldDebugStatements determines if debug statement wrapping should be enabled.
+func (d *trigquadDecoder) shouldDebugStatements() bool {
+	return d.opts.DebugStatements || (d.opts.AllowEnvOverrides && os.Getenv("TURTLE_DEBUG_STATEMENT") != "")
+}
+
+func (d *trigquadDecoder) Next() (Quad, error) {
 	// Return pending quads first (from predicate/object lists)
 	if len(d.pending) > 0 {
 		quad := d.pending[0]
@@ -246,7 +251,7 @@ func (d *trigQuadDecoder) Next() (Quad, error) {
 
 // buildStatement accumulates lines until we have a complete statement.
 // Returns: statement string, graphForStatement, closeGraphAfter, hitEOF, optional quad (if inline graph block), error
-func (d *trigQuadDecoder) buildStatement() (string, Term, bool, bool, *Quad, error) {
+func (d *trigquadDecoder) buildStatement() (string, Term, bool, bool, *Quad, error) {
 	var statement strings.Builder
 	graphForStatement := d.graph
 	closeGraphAfter := false
@@ -391,20 +396,20 @@ func (d *trigQuadDecoder) buildStatement() (string, Term, bool, bool, *Quad, err
 	return statement.String(), graphForStatement, closeGraphAfter, hitEOF, nil, nil
 }
 
-func (d *trigQuadDecoder) Err() error { return d.err }
-func (d *trigQuadDecoder) Close() error {
+func (d *trigquadDecoder) Err() error { return d.err }
+func (d *trigquadDecoder) Close() error {
 	return nil
 }
 
-func (d *trigQuadDecoder) readLine() (string, error) {
+func (d *trigquadDecoder) readLine() (string, error) {
 	return readLineWithLimit(d.reader, d.opts.MaxLineBytes)
 }
 
-func (d *trigQuadDecoder) checkContext() error {
+func (d *trigquadDecoder) checkContext() error {
 	return checkDecodeContext(d.opts.Context)
 }
 
-func (d *trigQuadDecoder) parseGraphToken(token string) (Term, error) {
+func (d *trigquadDecoder) parseGraphToken(token string) (Term, error) {
 	token = strings.TrimSpace(token)
 	if token == "" {
 		return nil, nil
@@ -445,7 +450,7 @@ func isTrigDirectiveLine(line string) bool {
 	return false
 }
 
-func (d *trigQuadDecoder) handleDirective(line string) bool {
+func (d *trigquadDecoder) handleDirective(line string) bool {
 	if prefix, iri, ok := parseAtPrefixDirective(line, false); ok {
 		d.prefixes[prefix] = iri
 		return true
@@ -469,8 +474,8 @@ func (d *trigQuadDecoder) handleDirective(line string) bool {
 	return false
 }
 
-func (d *trigQuadDecoder) parseTripleLine(line string) ([]Quad, error) {
-	debugStatements := d.opts.DebugStatements || (d.opts.AllowEnvOverrides && os.Getenv("TURTLE_DEBUG_STATEMENT") != "")
+func (d *trigquadDecoder) parseTripleLine(line string) ([]Quad, error) {
+	debugStatements := d.shouldDebugStatements()
 	opts := TurtleParseOptions{
 		Prefixes:        d.prefixes,
 		BaseIRI:         d.baseIRI,
@@ -490,7 +495,7 @@ func (d *trigQuadDecoder) parseTripleLine(line string) ([]Quad, error) {
 }
 
 // processStatement parses a statement line and returns quads with the specified graph.
-func (d *trigQuadDecoder) processStatement(line string, graphForStatement Term) ([]Quad, error) {
+func (d *trigquadDecoder) processStatement(line string, graphForStatement Term) ([]Quad, error) {
 	statements := splitTurtleStatements(line)
 	var quads []Quad
 	for _, stmt := range statements {
@@ -518,7 +523,7 @@ func (d *trigQuadDecoder) processStatement(line string, graphForStatement Term) 
 	return quads, nil
 }
 
-func (d *trigQuadDecoder) parseInlineGraphBlock(trimmed string, openIdx, closeIdx int) ([]Quad, string, error) {
+func (d *trigquadDecoder) parseInlineGraphBlock(trimmed string, openIdx, closeIdx int) ([]Quad, string, error) {
 	graphToken := strings.TrimSpace(trimmed[:openIdx])
 	inner := strings.TrimSpace(trimmed[openIdx+1 : closeIdx])
 	after := strings.TrimSpace(trimmed[closeIdx+1:])
@@ -530,7 +535,7 @@ func (d *trigQuadDecoder) parseInlineGraphBlock(trimmed string, openIdx, closeId
 		return nil, after, nil
 	}
 	statements := splitTurtleStatements(inner)
-	debugStatements := d.opts.DebugStatements || (d.opts.AllowEnvOverrides && os.Getenv("TURTLE_DEBUG_STATEMENT") != "")
+	debugStatements := d.shouldDebugStatements()
 	var quads []Quad
 	for _, stmt := range statements {
 		stmt = strings.TrimSpace(stmt)
@@ -561,14 +566,14 @@ func (d *trigQuadDecoder) parseInlineGraphBlock(trimmed string, openIdx, closeId
 	return quads, after, nil
 }
 
-func (d *trigQuadDecoder) wrapParseError(statement string, err error) error {
+func (d *trigquadDecoder) wrapParseError(statement string, err error) error {
 	if d.opts.DebugStatements || (d.opts.AllowEnvOverrides && os.Getenv("TURTLE_DEBUG_STATEMENT") != "") {
-		return WrapParseError("trig", statement, -1, err)
+		return wrapParseError("trig", statement, -1, err)
 	}
-	return WrapParseError("trig", "", -1, err)
+	return wrapParseError("trig", "", -1, err)
 }
 
-func (d *trigQuadDecoder) handleStartGraphBlock(trimmed string, graphForStatement *Term) (bool, error) {
+func (d *trigquadDecoder) handleStartGraphBlock(trimmed string, graphForStatement *Term) (bool, error) {
 	if !strings.HasSuffix(trimmed, "{") {
 		return false, nil
 	}
@@ -583,7 +588,7 @@ func (d *trigQuadDecoder) handleStartGraphBlock(trimmed string, graphForStatemen
 	return true, nil
 }
 
-func (d *trigQuadDecoder) handleInlineGraphClose(trimmed string, statement *strings.Builder, closeGraphAfter *bool) (bool, error) {
+func (d *trigquadDecoder) handleInlineGraphClose(trimmed string, statement *strings.Builder, closeGraphAfter *bool) (bool, error) {
 	if !d.inGraphBlock || !strings.Contains(trimmed, "}") || strings.Contains(trimmed, "|}") {
 		return false, nil
 	}
@@ -627,7 +632,7 @@ func isAnnotationBlock(trimmed string, openIdx int) bool {
 	return openIdx+1 < len(trimmed) && trimmed[openIdx+1] == '|'
 }
 
-func (d *trigQuadDecoder) nextLineOrRemainder() (string, error) {
+func (d *trigquadDecoder) nextLineOrRemainder() (string, error) {
 	if d.remainder != "" {
 		line := d.remainder
 		d.remainder = ""
@@ -636,7 +641,7 @@ func (d *trigQuadDecoder) nextLineOrRemainder() (string, error) {
 	return d.readLine()
 }
 
-func (d *trigQuadDecoder) maybeReadDirectiveContinuation(trimmed string) (string, bool, error) {
+func (d *trigquadDecoder) maybeReadDirectiveContinuation(trimmed string) (string, bool, error) {
 	if !isTrigDirectiveLine(trimmed) || strings.Contains(trimmed, "<") || strings.Contains(trimmed, ":") {
 		return trimmed, false, nil
 	}

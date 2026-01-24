@@ -9,7 +9,7 @@ import (
 
 type turtleParser struct {
 	lexer                      *turtleLexer
-	opts                       DecodeOptions
+	opts                       decodeOptions
 	prefixes                   map[string]string
 	baseIRI                    string
 	allowQuotedTripleStatement bool
@@ -20,7 +20,7 @@ type turtleParser struct {
 	err                        error
 }
 
-func newTurtleParser(r io.Reader, opts DecodeOptions) *turtleParser {
+func newTurtleParser(r io.Reader, opts decodeOptions) *turtleParser {
 	if opts.AllowEnvOverrides && os.Getenv("TURTLE_ALLOW_QT_STMT") != "" {
 		opts.AllowQuotedTripleStatement = true
 	}
@@ -36,6 +36,11 @@ func newTurtleParser(r io.Reader, opts DecodeOptions) *turtleParser {
 func (p *turtleParser) newBlankNode() BlankNode {
 	p.blankNodeCounter++
 	return BlankNode{ID: fmt.Sprintf("b%d", p.blankNodeCounter)}
+}
+
+// shouldDebugStatements determines if debug statement wrapping should be enabled.
+func (p *turtleParser) shouldDebugStatements() bool {
+	return p.opts.DebugStatements || (p.opts.AllowEnvOverrides && os.Getenv("TURTLE_DEBUG_STATEMENT") != "")
 }
 
 func (p *turtleParser) NextTriple() (Triple, error) {
@@ -153,10 +158,10 @@ func (p *turtleParser) appendStatementPart(builder *strings.Builder, part string
 }
 
 func (p *turtleParser) wrapParseError(statement string, err error) error {
-	if p.opts.DebugStatements || (p.opts.AllowEnvOverrides && os.Getenv("TURTLE_DEBUG_STATEMENT") != "") {
-		return WrapParseError("turtle", statement, -1, err)
+	if p.shouldDebugStatements() {
+		return wrapParseError("turtle", statement, -1, err)
 	}
-	return WrapParseError("turtle", "", -1, err)
+	return wrapParseError("turtle", "", -1, err)
 }
 
 // isLikelyDirective performs a quick string-based check to see if a line might be a directive.
@@ -344,6 +349,12 @@ func (p *turtleParser) parseTermTokensWithDepth(stream *turtleTokenStream, allow
 		if p.baseIRI != "" {
 			iri = resolveIRI(p.baseIRI, iri)
 		}
+		// Validate IRI if strict validation is enabled
+		if p.opts.StrictIRIValidation {
+			if err := ValidateIRI(iri); err != nil {
+				return nil, p.wrapParseError("", fmt.Errorf("invalid IRI: %w", err))
+			}
+		}
 		return IRI{Value: iri}, nil
 	case TokPNAMENS:
 		stream.next()
@@ -351,6 +362,12 @@ func (p *turtleParser) parseTermTokensWithDepth(stream *turtleTokenStream, allow
 		base, ok := p.prefixes[prefix]
 		if !ok {
 			return nil, p.wrapParseError("", fmt.Errorf("undefined prefix: %s", prefix))
+		}
+		// Validate IRI if strict validation is enabled
+		if p.opts.StrictIRIValidation {
+			if err := ValidateIRI(base); err != nil {
+				return nil, p.wrapParseError("", fmt.Errorf("invalid IRI from prefix %s: %w", prefix, err))
+			}
 		}
 		return IRI{Value: base}, nil
 	case TokPNAMELN:
@@ -363,7 +380,14 @@ func (p *turtleParser) parseTermTokensWithDepth(stream *turtleTokenStream, allow
 		if !ok {
 			return nil, p.wrapParseError("", fmt.Errorf("undefined prefix: %s", parts[0]))
 		}
-		return IRI{Value: base + parts[1]}, nil
+		iri := base + parts[1]
+		// Validate IRI if strict validation is enabled
+		if p.opts.StrictIRIValidation {
+			if err := ValidateIRI(iri); err != nil {
+				return nil, p.wrapParseError("", fmt.Errorf("invalid IRI from prefixed name %s: %w", tok.Lexeme, err))
+			}
+		}
+		return IRI{Value: iri}, nil
 	case TokBlankNode:
 		stream.next()
 		return BlankNode{ID: tok.Lexeme[2:]}, nil // Skip "_:"
@@ -380,7 +404,7 @@ func (p *turtleParser) parseTermTokensWithDepth(stream *turtleTokenStream, allow
 	case TokLParen:
 		return p.parseCollectionTokens(stream, depth)
 	case TokLDoubleAngle:
-		return p.parseTripleTermTokens(stream)
+		return p.parseTripleTermTokensWithDepth(stream, depth)
 	case TokLangTag:
 		// Language tags should only appear after string literals, not as standalone tokens
 		return nil, p.wrapParseError("", fmt.Errorf("unexpected language tag (must follow a string literal)"))
@@ -567,6 +591,15 @@ func (p *turtleParser) parseBlankNodePropertyListTokens(stream *turtleTokenStrea
 }
 
 func (p *turtleParser) parseTripleTermTokens(stream *turtleTokenStream) (Term, error) {
+	return p.parseTripleTermTokensWithDepth(stream, 0)
+}
+
+func (p *turtleParser) parseTripleTermTokensWithDepth(stream *turtleTokenStream, depth int) (Term, error) {
+	// Check depth limit
+	if p.opts.MaxDepth > 0 && depth >= p.opts.MaxDepth {
+		return nil, p.wrapParseError("", ErrDepthExceeded)
+	}
+
 	// Consume LDoubleAngle
 	if stream.next().Kind != TokLDoubleAngle {
 		return nil, p.wrapParseError("", fmt.Errorf("expected '<<'"))
@@ -579,8 +612,8 @@ func (p *turtleParser) parseTripleTermTokens(stream *turtleTokenStream) (Term, e
 		stream.next()
 	}
 
-	// Parse subject
-	subject, err := p.parseTermTokens(stream, false)
+	// Parse subject (nested triple terms are allowed, increment depth)
+	subject, err := p.parseTermTokensWithDepth(stream, false, depth+1)
 	if err != nil {
 		return nil, err
 	}
@@ -591,8 +624,8 @@ func (p *turtleParser) parseTripleTermTokens(stream *turtleTokenStream) (Term, e
 		return nil, err
 	}
 
-	// Parse object
-	object, err := p.parseTermTokens(stream, true)
+	// Parse object (nested triple terms are allowed, increment depth)
+	object, err := p.parseTermTokensWithDepth(stream, true, depth+1)
 	if err != nil {
 		return nil, err
 	}

@@ -7,6 +7,83 @@ import (
 	"testing"
 )
 
+// TestRoundTripByteForByteDeterministic verifies that deterministic formats
+// produce identical byte-for-byte output when round-tripped.
+// This ensures reproducible builds for deterministic formats.
+func TestRoundTripByteForByteDeterministic(t *testing.T) {
+	// Test formats that should be deterministic
+	deterministicFormats := []Format{FormatNTriples, FormatNQuads, FormatTurtle, FormatTriG}
+
+	for _, format := range deterministicFormats {
+		t.Run(string(format), func(t *testing.T) {
+			// Create test statements
+			var stmts []Statement
+			if format.IsQuadFormat() {
+				stmts = []Statement{
+					NewQuad(IRI{Value: "http://example.org/s1"}, IRI{Value: "http://example.org/p"}, IRI{Value: "http://example.org/o1"}, IRI{Value: "http://example.org/g"}),
+					NewQuad(IRI{Value: "http://example.org/s2"}, IRI{Value: "http://example.org/p"}, IRI{Value: "http://example.org/o2"}, IRI{Value: "http://example.org/g"}),
+					NewQuad(IRI{Value: "http://example.org/s3"}, IRI{Value: "http://example.org/p"}, IRI{Value: "http://example.org/o3"}, IRI{Value: "http://example.org/g"}),
+				}
+			} else {
+				stmts = []Statement{
+					NewTriple(IRI{Value: "http://example.org/s1"}, IRI{Value: "http://example.org/p"}, IRI{Value: "http://example.org/o1"}),
+					NewTriple(IRI{Value: "http://example.org/s2"}, IRI{Value: "http://example.org/p"}, IRI{Value: "http://example.org/o2"}),
+					NewTriple(IRI{Value: "http://example.org/s3"}, IRI{Value: "http://example.org/p"}, IRI{Value: "http://example.org/o3"}),
+				}
+			}
+
+			// First round-trip: encode -> decode -> encode
+			var buf1 bytes.Buffer
+			enc1, err := NewWriter(&buf1, format)
+			if err != nil {
+				t.Fatalf("format %s: encoder error: %v", format, err)
+			}
+			for _, stmt := range stmts {
+				if err := enc1.Write(stmt); err != nil {
+					t.Fatalf("format %s: write error: %v", format, err)
+				}
+			}
+			if err := enc1.Close(); err != nil {
+				t.Fatalf("format %s: close error: %v", format, err)
+			}
+			output1 := buf1.String()
+
+			// Decode and re-encode
+			dec, err := NewReader(strings.NewReader(output1), format)
+			if err != nil {
+				t.Fatalf("format %s: decoder error: %v", format, err)
+			}
+			parsed, err := collectStatements(dec)
+			if err != nil {
+				t.Fatalf("format %s: decode error: %v", format, err)
+			}
+			if err := dec.Close(); err != nil {
+				t.Fatalf("format %s: decoder close error: %v", format, err)
+			}
+
+			var buf2 bytes.Buffer
+			enc2, err := NewWriter(&buf2, format)
+			if err != nil {
+				t.Fatalf("format %s: encoder error: %v", format, err)
+			}
+			for _, stmt := range parsed {
+				if err := enc2.Write(stmt); err != nil {
+					t.Fatalf("format %s: write error: %v", format, err)
+				}
+			}
+			if err := enc2.Close(); err != nil {
+				t.Fatalf("format %s: close error: %v", format, err)
+			}
+			output2 := buf2.String()
+
+			// Output should be identical (byte-for-byte)
+			if output1 != output2 {
+				t.Errorf("format %s: round-trip output is not identical\nFirst:\n%q\n\nSecond:\n%q", format, output1, output2)
+			}
+		})
+	}
+}
+
 func TestRoundTripTriplesIsomorphic(t *testing.T) {
 	triples := []Triple{
 		{S: IRI{Value: "http://example.org/s"}, P: IRI{Value: "http://example.org/p"}, O: Literal{Lexical: "v", Lang: "en"}},

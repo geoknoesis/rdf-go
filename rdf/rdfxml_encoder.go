@@ -16,7 +16,7 @@ type RDFXMLEncodeOptions struct {
 }
 
 // Triple encoder for RDF/XML
-type rdfxmlTripleEncoder struct {
+type rdfxmltripleEncoder struct {
 	writer       *bufio.Writer
 	started      bool
 	closed       bool
@@ -29,11 +29,11 @@ type rdfxmlTripleEncoder struct {
 	autoSeq      int
 }
 
-func newRDFXMLTripleEncoder(w io.Writer) TripleEncoder {
-	return newRDFXMLTripleEncoderWithOptions(w, RDFXMLEncodeOptions{})
+func newRDFXMLtripleEncoder(w io.Writer) tripleEncoder {
+	return newRDFXMLtripleEncoderWithOptions(w, RDFXMLEncodeOptions{})
 }
 
-func newRDFXMLTripleEncoderWithOptions(w io.Writer, opts RDFXMLEncodeOptions) TripleEncoder {
+func newRDFXMLtripleEncoderWithOptions(w io.Writer, opts RDFXMLEncodeOptions) tripleEncoder {
 	indent := opts.Indent
 	if opts.Pretty && indent == "" {
 		indent = "  "
@@ -44,7 +44,7 @@ func newRDFXMLTripleEncoderWithOptions(w io.Writer, opts RDFXMLEncodeOptions) Tr
 	for prefix, ns := range prefixes {
 		nsToPref[ns] = prefix
 	}
-	return &rdfxmlTripleEncoder{
+	return &rdfxmltripleEncoder{
 		writer:       bufio.NewWriter(w),
 		opts:         opts,
 		indent:       indent,
@@ -54,12 +54,7 @@ func newRDFXMLTripleEncoderWithOptions(w io.Writer, opts RDFXMLEncodeOptions) Tr
 	}
 }
 
-// NewRDFXMLTripleEncoder creates an RDF/XML triple encoder with options.
-func NewRDFXMLTripleEncoder(w io.Writer, opts RDFXMLEncodeOptions) TripleEncoder {
-	return newRDFXMLTripleEncoderWithOptions(w, opts)
-}
-
-func (e *rdfxmlTripleEncoder) Write(t Triple) error {
+func (e *rdfxmltripleEncoder) Write(t Triple) error {
 	if e.err != nil {
 		return e.err
 	}
@@ -138,7 +133,7 @@ func (e *rdfxmlTripleEncoder) Write(t Triple) error {
 	return err
 }
 
-func (e *rdfxmlTripleEncoder) Flush() error {
+func (e *rdfxmltripleEncoder) Flush() error {
 	if e.err != nil {
 		return e.err
 	}
@@ -148,7 +143,7 @@ func (e *rdfxmlTripleEncoder) Flush() error {
 	return e.writer.Flush()
 }
 
-func (e *rdfxmlTripleEncoder) Close() error {
+func (e *rdfxmltripleEncoder) Close() error {
 	if e.closed {
 		return e.err
 	}
@@ -201,7 +196,7 @@ func rdfxmlSubjectAttrs(term Term) (string, error) {
 	}
 }
 
-func (e *rdfxmlTripleEncoder) predicateQName(iri string) (string, string, error) {
+func (e *rdfxmltripleEncoder) predicateQName(iri string) (string, string, error) {
 	ns, local, ok := splitIRIForQName(iri)
 	if !ok {
 		return "", "", fmt.Errorf("rdfxml: unable to abbreviate predicate IRI %q", iri)

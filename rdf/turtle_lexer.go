@@ -150,10 +150,10 @@ type turtleToken struct {
 
 type turtleLexer struct {
 	reader *bufio.Reader
-	opts   DecodeOptions
+	opts   decodeOptions
 }
 
-func newTurtleLexer(r io.Reader, opts DecodeOptions) *turtleLexer {
+func newTurtleLexer(r io.Reader, opts decodeOptions) *turtleLexer {
 	return &turtleLexer{
 		reader: bufio.NewReader(r),
 		opts:   normalizeDecodeOptions(opts),

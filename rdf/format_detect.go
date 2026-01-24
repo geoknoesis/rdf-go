@@ -5,13 +5,18 @@ import (
 	"strings"
 )
 
-// DetectFormat attempts to detect the RDF format from input by examining the first few bytes.
+const (
+	// formatDetectionBufferSize is the number of bytes to read for format detection
+	formatDetectionBufferSize = 512
+)
+
+// detectFormatFromSample attempts to detect the RDF format from input by examining the first few bytes.
 // It returns the detected format and whether detection was successful.
 // Detection is based on format signatures and heuristics.
 // This is an internal helper function.
-func DetectFormat(r io.Reader) (Format, bool) {
+func detectFormatFromSample(r io.Reader) (Format, bool) {
 	// Read a sample of the input (first 512 bytes should be enough)
-	buf := make([]byte, 512)
+	buf := make([]byte, formatDetectionBufferSize)
 	n, err := r.Read(buf)
 	if err != nil && err != io.EOF {
 		return "", false
@@ -65,7 +70,7 @@ func DetectFormat(r io.Reader) (Format, bool) {
 		!strings.Contains(sample, "@prefix") && !strings.Contains(sample, "@base") &&
 		!strings.Contains(strings.ToUpper(sample), "PREFIX") && !strings.Contains(strings.ToUpper(sample), "BASE") &&
 		!strings.Contains(sample, "[") && !strings.Contains(sample, "(")
-	
+
 	if hasNTriplesPattern {
 		// Check if it ends with . (N-Triples) or has 4th component (N-Quads)
 		// For N-Triples: <s> <p> <o> . or <s> <p> _:b0 .
@@ -83,7 +88,7 @@ func DetectFormat(r io.Reader) (Format, bool) {
 	hasTurtlePattern := strings.Contains(sample, "@prefix") || strings.Contains(sample, "@base") ||
 		strings.Contains(strings.ToUpper(sample), "PREFIX") || strings.Contains(strings.ToUpper(sample), "BASE") ||
 		strings.Contains(sample, "[") || strings.Contains(sample, "(")
-	
+
 	// Check for prefixed names (but exclude _: blank node syntax)
 	if !hasTurtlePattern && strings.Contains(sample, ":") {
 		// Check if it's a prefixed name (like ex:s) and not a blank node (_:b0)
@@ -96,7 +101,7 @@ func DetectFormat(r io.Reader) (Format, bool) {
 			}
 		}
 	}
-	
+
 	if hasTurtlePattern {
 		// Likely Turtle (uses prefixes, blank nodes, or collections)
 		return FormatTurtle, true
@@ -106,11 +111,11 @@ func DetectFormat(r io.Reader) (Format, bool) {
 	return "", false
 }
 
-// DetectQuadFormat attempts to detect quad-capable RDF formats.
+// detectQuadFormat attempts to detect quad-capable RDF formats.
 // This is an internal helper function.
-func DetectQuadFormat(r io.Reader) (Format, bool) {
+func detectQuadFormat(r io.Reader) (Format, bool) {
 	// Read a sample of the input
-	buf := make([]byte, 512)
+	buf := make([]byte, formatDetectionBufferSize)
 	n, err := r.Read(buf)
 	if err != nil && err != io.EOF {
 		return "", false
@@ -175,29 +180,28 @@ func isValidJSONStructure(s string) bool {
 	return (first == '{' && last == '}') || (first == '[' && last == ']')
 }
 
-// DetectFormatAuto attempts to detect either triple or quad format.
+// detectFormatAuto attempts to detect either triple or quad format.
 // It returns the format as a string and a boolean indicating success.
 // Note: This function reads from the reader, so the reader position will be advanced.
 // If you need to preserve the reader position, use io.TeeReader or buffer the input.
-func DetectFormatAuto(r io.Reader) (string, bool) {
+func detectFormatAuto(r io.Reader) (string, bool) {
 	// Read a sample first
-	buf := make([]byte, 512)
+	buf := make([]byte, formatDetectionBufferSize)
 	n, err := r.Read(buf)
 	if err != nil && err != io.EOF {
 		return "", false
 	}
 	sample := string(buf[:n])
-	
+
 	// Try quad formats first (they're more specific)
 	quadReader := strings.NewReader(sample)
-	if quadFormat, ok := DetectQuadFormat(quadReader); ok {
+	if quadFormat, ok := detectQuadFormat(quadReader); ok {
 		return string(quadFormat), true
 	}
 	// Try triple formats
 	tripleReader := strings.NewReader(sample)
-	if tripleFormat, ok := DetectFormat(tripleReader); ok {
+	if tripleFormat, ok := detectFormatFromSample(tripleReader); ok {
 		return string(tripleFormat), true
 	}
 	return "", false
 }
-

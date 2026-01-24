@@ -195,34 +195,34 @@ func TestContextCancellation(t *testing.T) {
 }
 
 func TestSafeDecodeOptions(t *testing.T) {
-	safe := SafeDecodeOptions()
+	safe := safeDecodeOptions()
 
 	// Verify safe limits are stricter than defaults
 	if safe.MaxLineBytes >= DefaultMaxLineBytes {
-		t.Errorf("SafeDecodeOptions.MaxLineBytes (%d) should be < DefaultMaxLineBytes (%d)", safe.MaxLineBytes, DefaultMaxLineBytes)
+		t.Errorf("safeDecodeOptions.MaxLineBytes (%d) should be < DefaultMaxLineBytes (%d)", safe.MaxLineBytes, DefaultMaxLineBytes)
 	}
 	if safe.MaxStatementBytes >= DefaultMaxStatementBytes {
-		t.Errorf("SafeDecodeOptions.MaxStatementBytes (%d) should be < DefaultMaxStatementBytes (%d)", safe.MaxStatementBytes, DefaultMaxStatementBytes)
+		t.Errorf("safeDecodeOptions.MaxStatementBytes (%d) should be < DefaultMaxStatementBytes (%d)", safe.MaxStatementBytes, DefaultMaxStatementBytes)
 	}
 	if safe.MaxDepth >= DefaultMaxDepth {
-		t.Errorf("SafeDecodeOptions.MaxDepth (%d) should be < DefaultMaxDepth (%d)", safe.MaxDepth, DefaultMaxDepth)
+		t.Errorf("safeDecodeOptions.MaxDepth (%d) should be < DefaultMaxDepth (%d)", safe.MaxDepth, DefaultMaxDepth)
 	}
 	if safe.MaxTriples >= DefaultMaxTriples {
-		t.Errorf("SafeDecodeOptions.MaxTriples (%d) should be < DefaultMaxTriples (%d)", safe.MaxTriples, DefaultMaxTriples)
+		t.Errorf("safeDecodeOptions.MaxTriples (%d) should be < DefaultMaxTriples (%d)", safe.MaxTriples, DefaultMaxTriples)
 	}
 
 	// Verify safe limits are positive
 	if safe.MaxLineBytes <= 0 {
-		t.Error("SafeDecodeOptions.MaxLineBytes should be positive")
+		t.Error("safeDecodeOptions.MaxLineBytes should be positive")
 	}
 	if safe.MaxStatementBytes <= 0 {
-		t.Error("SafeDecodeOptions.MaxStatementBytes should be positive")
+		t.Error("safeDecodeOptions.MaxStatementBytes should be positive")
 	}
 	if safe.MaxDepth <= 0 {
-		t.Error("SafeDecodeOptions.MaxDepth should be positive")
+		t.Error("safeDecodeOptions.MaxDepth should be positive")
 	}
 	if safe.MaxTriples <= 0 {
-		t.Error("SafeDecodeOptions.MaxTriples should be positive")
+		t.Error("safeDecodeOptions.MaxTriples should be positive")
 	}
 }
 
@@ -301,4 +301,3 @@ func TestWithSafeLimits(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
-

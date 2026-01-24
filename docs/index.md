@@ -14,7 +14,7 @@ A small, fast RDF parsing/encoding library with streaming APIs and RDF-star supp
 - **Multiple Formats**: Support for Turtle, TriG, N-Triples, N-Quads, RDF/XML, and JSON-LD
 - **Auto-Detection**: Automatic format detection with `FormatAuto`
 - **RDF-star Support**: Quoted triples via `TripleTerm` values
-- **Convenience Helpers**: `Parse`, `ReadAll`, `WriteAll` functions for easy integration
+- **Convenience Helper**: `Parse` function for streaming with handler functions
 - **Low Allocations**: Optimized for performance in high-throughput scenarios
 
 ## Quick Example

@@ -2646,7 +2646,11 @@ func readNQuadsFile(path string) ([]Quad, error) {
 	if err != nil {
 		return nil, err
 	}
-	stmts, err := ReadAll(context.Background(), strings.NewReader(string(data)), FormatNQuads)
+	var stmts []Statement
+	err = Parse(context.Background(), strings.NewReader(string(data)), FormatNQuads, func(s Statement) error {
+		stmts = append(stmts, s)
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -3319,7 +3323,7 @@ func runDirectoryTestsInDir(t *testing.T, testDir string, cfg formatConfig, forc
 			if strings.Contains(fileName, "turtle12-") || strings.Contains(fileName, "nt-ttl12-") || strings.Contains(fileName, "trig12-") {
 				allowQt = true
 			}
-			opts := DefaultDecodeOptions()
+			opts := defaultDecodeOptions()
 			opts.AllowQuotedTripleStatement = allowQt
 
 			// Convert DecodeOptions to unified Options

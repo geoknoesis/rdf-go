@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/url"
 	"sort"
 	"strings"
@@ -181,68 +180,6 @@ func (p *defaultJSONLDProcessor) FromRDF(ctx context.Context, quads []Quad, opts
 	return normalized, nil
 }
 
-// NewJSONLDTripleDecoder creates a JSON-LD triple decoder with options.
-func NewJSONLDTripleDecoder(r io.Reader, opts JSONLDOptions) TripleDecoder {
-	return newJSONLDTripleDecoderWithOptions(r, opts)
-}
-
-// NewJSONLDQuadDecoder creates a JSON-LD quad decoder with options.
-func NewJSONLDQuadDecoder(r io.Reader, opts JSONLDOptions) QuadDecoder {
-	return newJSONLDQuadDecoderWithOptions(r, opts)
-}
-
-// NewJSONLDTripleEncoder creates a JSON-LD triple encoder with options.
-func NewJSONLDTripleEncoder(w io.Writer, opts JSONLDOptions) TripleEncoder {
-	return newJSONLDTripleEncoderWithOptions(w, opts)
-}
-
-// NewJSONLDQuadEncoder creates a JSON-LD quad encoder with options.
-func NewJSONLDQuadEncoder(w io.Writer, opts JSONLDOptions) QuadEncoder {
-	return newJSONLDQuadEncoderWithOptions(w, opts)
-}
-
-// ParseJSONLDTriples streams JSON-LD triples to a handler.
-func ParseJSONLDTriples(ctx context.Context, r io.Reader, opts JSONLDOptions, handler TripleHandler) error {
-	decoder := NewJSONLDTripleDecoder(r, opts)
-	defer decoder.Close()
-	for {
-		if ctx != nil && ctx.Err() != nil {
-			return ctx.Err()
-		}
-		triple, err := decoder.Next()
-		if err == io.EOF {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		if err := handler.Handle(triple); err != nil {
-			return err
-		}
-	}
-}
-
-// ParseJSONLDQuads streams JSON-LD quads to a handler.
-func ParseJSONLDQuads(ctx context.Context, r io.Reader, opts JSONLDOptions, handler QuadHandler) error {
-	decoder := NewJSONLDQuadDecoder(r, opts)
-	defer decoder.Close()
-	for {
-		if ctx != nil && ctx.Err() != nil {
-			return ctx.Err()
-		}
-		quad, err := decoder.Next()
-		if err == io.EOF {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		if err := handler.Handle(quad); err != nil {
-			return err
-		}
-	}
-}
-
 type jsonGoldDocumentLoader struct {
 	ctx   context.Context
 	inner DocumentLoader
@@ -298,7 +235,11 @@ func newJSONGoldOptions(ctx context.Context, opts JSONLDOptions) *ld.JsonLdOptio
 }
 
 func parseNQuadsString(ctx context.Context, nquads string) ([]Quad, error) {
-	stmts, err := ReadAll(ctx, strings.NewReader(nquads), FormatNQuads)
+	var stmts []Statement
+	err := Parse(ctx, strings.NewReader(nquads), FormatNQuads, func(s Statement) error {
+		stmts = append(stmts, s)
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}

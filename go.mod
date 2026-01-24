@@ -1,6 +1,6 @@
 module github.com/geoknoesis/rdf-go
 
-go 1.24.0
+go 1.25.5
 
 require (
 	github.com/piprate/json-gold v0.7.0 // indirect

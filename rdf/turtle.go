@@ -201,13 +201,17 @@ func (c *turtleCursor) parseSubject() (Term, error) {
 }
 
 func (c *turtleCursor) parseQuotedSubject() (Term, error) {
+	return c.parseQuotedSubjectWithDepth(0)
+}
+
+func (c *turtleCursor) parseQuotedSubjectWithDepth(depth int) (Term, error) {
 	c.skipWS()
 	if c.pos >= len(c.input) {
 		return nil, c.errorf("unexpected end of line")
 	}
 	switch {
 	case strings.HasPrefix(c.input[c.pos:], "<<"):
-		return c.parseTripleTerm()
+		return c.parseTripleTermWithDepth(depth)
 	case c.input[c.pos] == '[':
 		return c.parseAnonBlankNode()
 	case c.input[c.pos] == '<':
@@ -220,13 +224,17 @@ func (c *turtleCursor) parseQuotedSubject() (Term, error) {
 }
 
 func (c *turtleCursor) parseQuotedObject() (Term, error) {
+	return c.parseQuotedObjectWithDepth(0)
+}
+
+func (c *turtleCursor) parseQuotedObjectWithDepth(depth int) (Term, error) {
 	c.skipWS()
 	if c.pos >= len(c.input) {
 		return nil, c.errorf("unexpected end of line")
 	}
 	switch {
 	case strings.HasPrefix(c.input[c.pos:], "<<"):
-		return c.parseTripleTerm()
+		return c.parseTripleTermWithDepth(depth)
 	case c.input[c.pos] == '[':
 		return c.parseAnonBlankNode()
 	case c.input[c.pos] == '<':
@@ -438,7 +446,7 @@ func (c *turtleCursor) parseTermWithDepth(allowLiteral bool, depth int) (Term, e
 func (c *turtleCursor) tryParseTermByPrefix(allowLiteral bool, depth int) (Term, bool, error) {
 	switch {
 	case strings.HasPrefix(c.input[c.pos:], "<<"):
-		term, err := c.parseTripleTerm()
+		term, err := c.parseTripleTermWithDepth(depth)
 		return term, true, err
 	case c.input[c.pos] == '<':
 		term, err := c.parseIRI()
@@ -990,6 +998,15 @@ func (c *turtleCursor) parseLongLiteral(quoteChar byte) (Term, error) {
 }
 
 func (c *turtleCursor) parseTripleTerm() (Term, error) {
+	return c.parseTripleTermWithDepth(0)
+}
+
+func (c *turtleCursor) parseTripleTermWithDepth(depth int) (Term, error) {
+	// Check depth limit
+	if c.maxDepth > 0 && depth >= c.maxDepth {
+		return nil, ErrDepthExceeded
+	}
+
 	if !strings.HasPrefix(c.input[c.pos:], "<<") {
 		return nil, c.errorf("expected '<<'")
 	}
@@ -1008,8 +1025,8 @@ func (c *turtleCursor) parseTripleTerm() (Term, error) {
 		}
 	}
 
-	// Parse subject (nested triple terms are allowed)
-	subject, err := c.parseQuotedSubject()
+	// Parse subject (nested triple terms are allowed, increment depth)
+	subject, err := c.parseQuotedSubjectWithDepth(depth + 1)
 	if err != nil {
 		return nil, err
 	}
@@ -1020,8 +1037,8 @@ func (c *turtleCursor) parseTripleTerm() (Term, error) {
 		return nil, err
 	}
 
-	// Parse object (nested triple terms are allowed)
-	object, err := c.parseQuotedObject()
+	// Parse object (nested triple terms are allowed, increment depth)
+	object, err := c.parseQuotedObjectWithDepth(depth + 1)
 	if err != nil {
 		return nil, err
 	}

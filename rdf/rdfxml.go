@@ -13,33 +13,49 @@ const (
 	rdfXMLNS = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
 	xmlNS    = "http://www.w3.org/XML/1998/namespace"
 	itsNS    = "http://www.w3.org/2005/11/its"
+
+	// Default channel buffer size for streaming decoders
+	defaultChannelBufferSize = 32
 )
 
 // Triple decoder for RDF/XML
-type rdfxmlTripleDecoder struct {
-	dec             *xml.Decoder
-	queue           []Triple
-	err             error
-	baseURI         string
-	namespaces      map[string]string // prefix -> namespace
-	blankIDGen      int               // for generating blank node IDs
-	seenRoot        bool
-	idsSeen         map[string]struct{}
-	rootElementSeen bool
-	baseStack       []string
-	containerIndex  map[string]int
+type rdfxmltripleDecoder struct {
+	dec              *xml.Decoder
+	queue            []Triple
+	err              error
+	baseURI          string
+	namespaces       map[string]string // prefix -> namespace
+	blankIDGen       int               // for generating blank node IDs
+	seenRoot         bool
+	idsSeen          map[string]struct{}
+	rootElementSeen  bool
+	baseStack        []string
+	containerIndex   map[string]int
+	expandContainers bool // Enable container membership expansion
 }
 
-func newRDFXMLTripleDecoder(r io.Reader) TripleDecoder {
-	return &rdfxmlTripleDecoder{
-		dec:            xml.NewDecoder(r),
-		namespaces:     make(map[string]string),
-		idsSeen:        make(map[string]struct{}),
-		containerIndex: make(map[string]int),
+func newRDFXMLtripleDecoder(r io.Reader) tripleDecoder {
+	return newRDFXMLtripleDecoderWithOptions(r, decodeOptions{
+		ExpandRDFXMLContainers: true, // Default: enable container expansion
+	})
+}
+
+func newRDFXMLtripleDecoderWithOptions(r io.Reader, opts decodeOptions) tripleDecoder {
+	// Container expansion is enabled by default (set in defaultDecodeOptions).
+	// If opts.ExpandRDFXMLContainers is false, it means OptDisableRDFXMLContainerExpansion()
+	// was explicitly called, so we respect that choice.
+	expandContainers := opts.ExpandRDFXMLContainers
+
+	return &rdfxmltripleDecoder{
+		dec:              xml.NewDecoder(r),
+		namespaces:       make(map[string]string),
+		idsSeen:          make(map[string]struct{}),
+		containerIndex:   make(map[string]int),
+		expandContainers: expandContainers,
 	}
 }
 
-func (d *rdfxmlTripleDecoder) Next() (Triple, error) {
+func (d *rdfxmltripleDecoder) Next() (Triple, error) {
 	for {
 		if len(d.queue) > 0 {
 			next := d.queue[0]
@@ -50,12 +66,12 @@ func (d *rdfxmlTripleDecoder) Next() (Triple, error) {
 		if err != nil {
 			if err == io.EOF {
 				if !d.seenRoot {
-					d.err = WrapParseError("rdfxml", "", int(d.dec.InputOffset()), fmt.Errorf("rdfxml: missing root element"))
+					d.err = wrapParseError("rdfxml", "", int(d.dec.InputOffset()), d.wrapRDFXMLError(fmt.Errorf("missing root element")))
 					return Triple{}, d.err
 				}
 				return Triple{}, io.EOF
 			}
-			d.err = WrapParseError("rdfxml", "", int(d.dec.InputOffset()), err)
+			d.err = wrapParseError("rdfxml", "", int(d.dec.InputOffset()), err)
 			return Triple{}, d.err
 		}
 		switch t := tok.(type) {
@@ -68,12 +84,12 @@ func (d *rdfxmlTripleDecoder) Next() (Triple, error) {
 					d.queue = d.queue[1:]
 					// Store the error for later
 					if d.err == nil {
-						d.err = WrapParseError("rdfxml", "", int(d.dec.InputOffset()), err)
+						d.err = wrapParseError("rdfxml", "", int(d.dec.InputOffset()), err)
 					}
 					return next, nil
 				}
 				if d.err == nil {
-					d.err = WrapParseError("rdfxml", "", int(d.dec.InputOffset()), err)
+					d.err = wrapParseError("rdfxml", "", int(d.dec.InputOffset()), err)
 				}
 				return Triple{}, d.err
 			}
@@ -87,18 +103,18 @@ func (d *rdfxmlTripleDecoder) Next() (Triple, error) {
 	}
 }
 
-func (d *rdfxmlTripleDecoder) Err() error { return d.err }
-func (d *rdfxmlTripleDecoder) Close() error {
+func (d *rdfxmltripleDecoder) Err() error { return d.err }
+func (d *rdfxmltripleDecoder) Close() error {
 	return nil
 }
 
-func (d *rdfxmlTripleDecoder) handleStartElement(el xml.StartElement) error {
+func (d *rdfxmltripleDecoder) handleStartElement(el xml.StartElement) error {
 	for _, attr := range el.Attr {
 		if attr.Name.Space == rdfXMLNS && (attr.Name.Local == "aboutEach" || attr.Name.Local == "aboutEachPrefix") {
-			return fmt.Errorf("rdfxml: rdf:%s is not supported", attr.Name.Local)
+			return d.wrapRDFXMLError(fmt.Errorf("rdf:%s is not supported", attr.Name.Local))
 		}
 		if attr.Name.Space == rdfXMLNS && attr.Name.Local == "li" {
-			return fmt.Errorf("rdfxml: rdf:li is not permitted as an attribute")
+			return d.wrapRDFXMLError(fmt.Errorf("rdf:li is not permitted as an attribute"))
 		}
 	}
 	// Track namespace declarations
@@ -114,7 +130,7 @@ func (d *rdfxmlTripleDecoder) handleStartElement(el xml.StartElement) error {
 	// Handle RDF root element - process its children
 	if el.Name.Space == rdfXMLNS && el.Name.Local == "RDF" {
 		if d.rootElementSeen {
-			return fmt.Errorf("rdfxml: nested rdf:RDF elements are not allowed")
+			return d.wrapRDFXMLError(fmt.Errorf("nested rdf:RDF elements are not allowed"))
 		}
 		d.rootElementSeen = true
 		return nil
@@ -140,13 +156,13 @@ func (d *rdfxmlTripleDecoder) handleStartElement(el xml.StartElement) error {
 
 	// Disallow RDF namespace elements as node elements unless explicitly allowed.
 	if el.Name.Space == rdfXMLNS {
-		return fmt.Errorf("rdfxml: illegal RDF element %s", el.Name.Local)
+		return d.wrapRDFXMLError(fmt.Errorf("illegal RDF element %s", el.Name.Local))
 	}
 
 	return nil
 }
 
-func (d *rdfxmlTripleDecoder) readPredicateElements(subject Term, parentEl xml.StartElement) error {
+func (d *rdfxmltripleDecoder) readPredicateElements(subject Term, parentEl xml.StartElement) error {
 	depth := 1
 	containerKey := d.containerKey(subject)
 	for {
@@ -157,98 +173,42 @@ func (d *rdfxmlTripleDecoder) readPredicateElements(subject Term, parentEl xml.S
 			// still allow queued triples to be returned.
 			if err == io.EOF && depth > 1 {
 				// Missing EndElement for parent - this is an error
-				return fmt.Errorf("rdfxml: unexpected EOF, missing EndElement (depth=%d)", depth)
+				return d.wrapRDFXMLError(fmt.Errorf("unexpected EOF, missing EndElement (depth=%d)", depth))
 			}
 			return err
 		}
 		switch t := tok.(type) {
 		case xml.StartElement:
 			depth++
-			// Track namespace declarations on this element
-			for _, attr := range t.Attr {
-				if attr.Name.Space == "" && strings.HasPrefix(attr.Name.Local, "xmlns:") {
-					prefix := strings.TrimPrefix(attr.Name.Local, "xmlns:")
-					d.namespaces[prefix] = attr.Value
-				} else if attr.Name.Space == "" && attr.Name.Local == "xmlns" {
-					d.namespaces[""] = attr.Value
-				}
-			}
+			d.handleNamespaceDeclarations(t.Attr)
 
-			// In predicate context, every child element is a property element.
-			if err := d.validatePropertyIDs(t.Attr); err != nil {
+			if err := d.validatePropertyElement(t); err != nil {
 				return err
 			}
-			if t.Name.Space == rdfXMLNS && isForbiddenRDFPropertyElement(t.Name.Local) {
-				return fmt.Errorf("rdfxml: illegal RDF property element %s", t.Name.Local)
-			}
+
 			parseType := d.attrValue(t.Attr, rdfXMLNS, "parseType")
-			if parseType == "Literal" {
-				if err := d.validateLiteralPropertyAttributes(t.Attr); err != nil {
+			if err := d.validateParseTypeAttributes(t.Attr, parseType); err != nil {
+				return err
+			}
+
+			// Handle empty property elements with attributes
+			if parseType == "" && d.isEmptyElement(t) {
+				handled, err := d.handleEmptyPropertyElementWithAttributes(t, subject)
+				if err != nil {
 					return err
 				}
-			}
-			if parseType != "" {
-				if d.attrValue(t.Attr, rdfXMLNS, "resource") != "" || d.attrValue(t.Attr, rdfXMLNS, "nodeID") != "" {
-					return fmt.Errorf("rdfxml: rdf:parseType cannot be used with rdf:resource or rdf:nodeID")
-				}
-			}
-			if d.attrValue(t.Attr, rdfXMLNS, "resource") != "" && d.attrValue(t.Attr, rdfXMLNS, "nodeID") != "" {
-				return fmt.Errorf("rdfxml: rdf:resource and rdf:nodeID are mutually exclusive")
-			}
-			if parseType == "" && d.isEmptyElement(t) {
-				// Check for property attributes
-				if resource := d.attrValue(t.Attr, rdfXMLNS, "resource"); resource != "" {
-					pred := d.resolveQName(t.Name.Space, t.Name.Local)
-					obj := IRI{Value: d.resolveIRI(d.baseURI, resource)}
-					d.queue = append(d.queue, Triple{S: subject, P: IRI{Value: pred}, O: obj})
-					if err := d.consumeElement(); err != nil {
-						return err
-					}
-					depth--
-					continue
-				}
-				if nodeID := d.attrValue(t.Attr, rdfXMLNS, "nodeID"); nodeID != "" {
-					if !isValidXMLName(nodeID) {
-						return fmt.Errorf("rdfxml: invalid rdf:nodeID %q", nodeID)
-					}
-					pred := d.resolveQName(t.Name.Space, t.Name.Local)
-					obj := BlankNode{ID: nodeID}
-					d.queue = append(d.queue, Triple{S: subject, P: IRI{Value: pred}, O: obj})
-					if err := d.consumeElement(); err != nil {
-						return err
-					}
+				if handled {
 					depth--
 					continue
 				}
 			}
 
-			pred := d.resolveQName(t.Name.Space, t.Name.Local)
-			if t.Name.Space == rdfXMLNS && t.Name.Local == "li" {
-				pred = d.nextContainerPredicate(containerKey)
-			} else if t.Name.Space == rdfXMLNS && strings.HasPrefix(t.Name.Local, "_") {
-				if idx, ok := parseContainerIndex(t.Name.Local); ok {
-					pred = rdfXMLNS + t.Name.Local
-					d.bumpContainerIndex(containerKey, idx)
-				}
-			}
-			obj, annotation, annotationNodeID, err := d.objectFromPredicate(t)
-			if err != nil {
+			// Process regular property element
+			if err := d.processPropertyElement(t, subject, containerKey); err != nil {
 				return err
 			}
-			// objectFromPredicate consumes the EndElement for the property element,
-			// so we need to decrement depth
+			// objectFromPredicate consumes the EndElement, so decrement depth
 			depth--
-			if obj != nil {
-				triple := Triple{S: subject, P: IRI{Value: pred}, O: obj}
-				d.queue = append(d.queue, triple)
-				// Handle annotations
-				if annotation != "" || annotationNodeID != "" {
-					anns := d.handleAnnotation(subject, IRI{Value: pred}, obj, annotation, annotationNodeID)
-					for _, ann := range anns {
-						d.queue = append(d.queue, ann)
-					}
-				}
-			}
 		case xml.EndElement:
 			depth--
 			if depth == 0 {
@@ -258,23 +218,13 @@ func (d *rdfxmlTripleDecoder) readPredicateElements(subject Term, parentEl xml.S
 	}
 }
 
-func (d *rdfxmlTripleDecoder) objectFromPredicate(start xml.StartElement) (Term, string, string, error) {
+func (d *rdfxmltripleDecoder) objectFromPredicate(start xml.StartElement) (Term, string, string, error) {
 	parseType := d.attrValue(start.Attr, rdfXMLNS, "parseType")
 	annotation := d.attrValue(start.Attr, rdfXMLNS, "annotation")
 	annotationNodeID := d.attrValue(start.Attr, rdfXMLNS, "annotationNodeID")
 
-	if parseType == "Literal" {
-		if err := d.validateLiteralPropertyAttributes(start.Attr); err != nil {
-			return nil, annotation, annotationNodeID, err
-		}
-	}
-	if parseType != "" {
-		if d.attrValue(start.Attr, rdfXMLNS, "resource") != "" || d.attrValue(start.Attr, rdfXMLNS, "nodeID") != "" {
-			return nil, annotation, annotationNodeID, fmt.Errorf("rdfxml: rdf:parseType cannot be used with rdf:resource or rdf:nodeID")
-		}
-	}
-	if d.attrValue(start.Attr, rdfXMLNS, "resource") != "" && d.attrValue(start.Attr, rdfXMLNS, "nodeID") != "" {
-		return nil, annotation, annotationNodeID, fmt.Errorf("rdfxml: rdf:resource and rdf:nodeID are mutually exclusive")
+	if err := d.validateParseTypeAttributes(start.Attr, parseType); err != nil {
+		return nil, annotation, annotationNodeID, err
 	}
 
 	// Handle rdf:resource attribute (empty property element with resource)
@@ -289,7 +239,7 @@ func (d *rdfxmlTripleDecoder) objectFromPredicate(start xml.StartElement) (Term,
 	// Handle rdf:nodeID attribute
 	if nodeID := d.attrValue(start.Attr, rdfXMLNS, "nodeID"); nodeID != "" && parseType == "" {
 		if !isValidXMLName(nodeID) {
-			return nil, annotation, annotationNodeID, fmt.Errorf("rdfxml: invalid rdf:nodeID %q", nodeID)
+			return nil, annotation, annotationNodeID, d.wrapRDFXMLError(fmt.Errorf("invalid rdf:nodeID %q", nodeID))
 		}
 		obj := BlankNode{ID: nodeID}
 		if err := d.consumeElement(); err != nil {
@@ -342,7 +292,7 @@ func (d *rdfxmlTripleDecoder) objectFromPredicate(start xml.StartElement) (Term,
 	}
 	if _, ok := firstTok.(xml.StartElement); ok {
 		// Nested elements without parseType are not supported in this parser.
-		return nil, annotation, annotationNodeID, fmt.Errorf("rdfxml: nested property elements are not supported without parseType")
+		return nil, annotation, annotationNodeID, d.wrapRDFXMLError(fmt.Errorf("nested property elements are not supported without parseType"))
 	}
 
 	// Handle literal content (CharData or EndElement)
@@ -350,7 +300,7 @@ func (d *rdfxmlTripleDecoder) objectFromPredicate(start xml.StartElement) (Term,
 	return obj, annotation, annotationNodeID, err
 }
 
-func (d *rdfxmlTripleDecoder) readLiteralContent(start xml.StartElement, firstTok xml.Token) (Term, string, string, error) {
+func (d *rdfxmltripleDecoder) readLiteralContent(start xml.StartElement, firstTok xml.Token) (Term, string, string, error) {
 	var content strings.Builder
 	lang := d.attrValue(start.Attr, xmlNS, "lang")
 	dir := d.attrValue(start.Attr, itsNS, "dir")
@@ -377,7 +327,7 @@ func (d *rdfxmlTripleDecoder) readLiteralContent(start xml.StartElement, firstTo
 			return lit, annotation, annotationNodeID, nil
 		}
 		// EndElement doesn't match - this shouldn't happen
-		return nil, "", "", fmt.Errorf("rdfxml: unexpected EndElement in empty property element")
+		return nil, "", "", d.wrapRDFXMLError(fmt.Errorf("unexpected EndElement in empty property element"))
 	}
 
 	// Read remaining content until we hit the EndElement for the property element
@@ -397,7 +347,7 @@ func (d *rdfxmlTripleDecoder) readLiteralContent(start xml.StartElement, firstTo
 		case xml.EndElement:
 			// Verify this is the EndElement for the property element.
 			if t.Name.Space != start.Name.Space || t.Name.Local != start.Name.Local {
-				return nil, "", "", fmt.Errorf("rdfxml: unexpected EndElement %s:%s, expected %s:%s", t.Name.Space, t.Name.Local, start.Name.Space, start.Name.Local)
+				return nil, "", "", d.wrapRDFXMLError(fmt.Errorf("unexpected EndElement %s:%s, expected %s:%s", t.Name.Space, t.Name.Local, start.Name.Space, start.Name.Local))
 			}
 			lexical := strings.TrimSpace(content.String())
 			lit := Literal{Lexical: lexical}
@@ -417,7 +367,7 @@ func (d *rdfxmlTripleDecoder) readLiteralContent(start xml.StartElement, firstTo
 	}
 }
 
-func (d *rdfxmlTripleDecoder) readNestedResource(start xml.StartElement, bnode BlankNode) error {
+func (d *rdfxmltripleDecoder) readNestedResource(start xml.StartElement, bnode BlankNode) error {
 	// Read nested properties
 	depth := 1
 	for {
@@ -451,7 +401,7 @@ func (d *rdfxmlTripleDecoder) readNestedResource(start xml.StartElement, bnode B
 	}
 }
 
-func (d *rdfxmlTripleDecoder) readXMLLiteral(start xml.StartElement) (Term, error) {
+func (d *rdfxmltripleDecoder) readXMLLiteral(start xml.StartElement) (Term, error) {
 	// Read the entire XML content as a string
 	var parts []string
 	depth := 1
@@ -516,7 +466,7 @@ func (d *rdfxmlTripleDecoder) readXMLLiteral(start xml.StartElement) (Term, erro
 	}
 }
 
-func (d *rdfxmlTripleDecoder) readCollection(start xml.StartElement) (Term, error) {
+func (d *rdfxmltripleDecoder) readCollection(start xml.StartElement) (Term, error) {
 	// RDF collections are represented as a linked list using rdf:first and rdf:rest
 	firstBNode := d.newBlankNode()
 	current := firstBNode
@@ -595,7 +545,7 @@ func (d *rdfxmlTripleDecoder) readCollection(start xml.StartElement) (Term, erro
 	}
 }
 
-func (d *rdfxmlTripleDecoder) readTripleTerm(start xml.StartElement) (Term, error) {
+func (d *rdfxmltripleDecoder) readTripleTerm(start xml.StartElement) (Term, error) {
 	// Read a nested Description element representing the triple
 	var subject, predicate, object Term
 	depth := 1
@@ -661,7 +611,7 @@ done:
 	if subject == nil || predicate == nil || object == nil {
 		// Accept incomplete triple term with a placeholder predicate/object to avoid hard failures.
 		if subject == nil {
-			return nil, fmt.Errorf("rdfxml: incomplete triple term")
+			return nil, d.wrapRDFXMLError(fmt.Errorf("incomplete triple term"))
 		}
 		return TripleTerm{
 			S: subject,
@@ -672,7 +622,7 @@ done:
 	return TripleTerm{S: subject, P: predicate.(IRI), O: object}, nil
 }
 
-func (d *rdfxmlTripleDecoder) handleAnnotation(subject Term, predicate IRI, object Term, annotation, annotationNodeID string) []Triple {
+func (d *rdfxmltripleDecoder) handleAnnotation(subject Term, predicate IRI, object Term, annotation, annotationNodeID string) []Triple {
 	if annotation == "" && annotationNodeID == "" {
 		return nil
 	}
@@ -702,7 +652,7 @@ func (d *rdfxmlTripleDecoder) handleAnnotation(subject Term, predicate IRI, obje
 	}
 }
 
-func (d *rdfxmlTripleDecoder) consumeElement() error {
+func (d *rdfxmltripleDecoder) consumeElement() error {
 	depth := 1
 	for {
 		tok, err := d.nextToken()
@@ -721,7 +671,7 @@ func (d *rdfxmlTripleDecoder) consumeElement() error {
 	}
 }
 
-func (d *rdfxmlTripleDecoder) isEmptyElement(el xml.StartElement) bool {
+func (d *rdfxmltripleDecoder) isEmptyElement(el xml.StartElement) bool {
 	// An element is considered "empty" if it has rdf:resource or rdf:nodeID
 	// and no parseType, which means it should be self-closing
 	parseType := d.attrValue(el.Attr, rdfXMLNS, "parseType")
@@ -733,75 +683,75 @@ func (d *rdfxmlTripleDecoder) isEmptyElement(el xml.StartElement) bool {
 	return resource != "" || nodeID != ""
 }
 
-func (d *rdfxmlTripleDecoder) validateNodeIDs(attrs []xml.Attr) error {
+func (d *rdfxmltripleDecoder) validateNodeIDs(attrs []xml.Attr) error {
 	id := d.rdfAttrValue(attrs, "ID")
 	nodeID := d.rdfAttrValue(attrs, "nodeID")
 	about := d.rdfAttrValue(attrs, "about")
 	bagID := d.rdfAttrValue(attrs, "bagID")
 
 	if nodeID != "" && id != "" {
-		return fmt.Errorf("rdfxml: rdf:nodeID cannot be used with rdf:ID")
+		return d.wrapRDFXMLError(fmt.Errorf("rdf:nodeID cannot be used with rdf:ID"))
 	}
 	if nodeID != "" && about != "" {
-		return fmt.Errorf("rdfxml: rdf:nodeID cannot be used with rdf:about")
+		return d.wrapRDFXMLError(fmt.Errorf("rdf:nodeID cannot be used with rdf:about"))
 	}
 	if id != "" && about != "" {
-		return fmt.Errorf("rdfxml: rdf:ID cannot be used with rdf:about")
+		return d.wrapRDFXMLError(fmt.Errorf("rdf:ID cannot be used with rdf:about"))
 	}
 
 	if id != "" {
 		if !isValidXMLName(id) {
-			return fmt.Errorf("rdfxml: invalid rdf:ID %q", id)
+			return d.wrapRDFXMLError(fmt.Errorf("invalid rdf:ID %q", id))
 		}
 		resolved := d.resolveID(id)
 		if _, exists := d.idsSeen[resolved]; exists {
-			return fmt.Errorf("rdfxml: duplicate rdf:ID %q", id)
+			return d.wrapRDFXMLError(fmt.Errorf("duplicate rdf:ID %q", id))
 		}
 		d.idsSeen[resolved] = struct{}{}
 	}
 	if nodeID != "" {
 		if !isValidXMLName(nodeID) {
-			return fmt.Errorf("rdfxml: invalid rdf:nodeID %q", nodeID)
+			return d.wrapRDFXMLError(fmt.Errorf("invalid rdf:nodeID %q", nodeID))
 		}
 	}
 	if bagID != "" {
 		if !isValidXMLName(bagID) {
-			return fmt.Errorf("rdfxml: invalid rdf:bagID %q", bagID)
+			return d.wrapRDFXMLError(fmt.Errorf("invalid rdf:bagID %q", bagID))
 		}
 		resolved := d.resolveID(bagID)
 		if _, exists := d.idsSeen[resolved]; exists {
-			return fmt.Errorf("rdfxml: duplicate rdf:bagID %q", bagID)
+			return d.wrapRDFXMLError(fmt.Errorf("duplicate rdf:bagID %q", bagID))
 		}
 		d.idsSeen[resolved] = struct{}{}
 	}
 	return nil
 }
 
-func (d *rdfxmlTripleDecoder) validatePropertyIDs(attrs []xml.Attr) error {
+func (d *rdfxmltripleDecoder) validatePropertyIDs(attrs []xml.Attr) error {
 	if id := d.rdfAttrValue(attrs, "ID"); id != "" {
 		if !isValidXMLName(id) {
-			return fmt.Errorf("rdfxml: invalid rdf:ID %q", id)
+			return d.wrapRDFXMLError(fmt.Errorf("invalid rdf:ID %q", id))
 		}
 		resolved := d.resolveID(id)
 		if _, exists := d.idsSeen[resolved]; exists {
-			return fmt.Errorf("rdfxml: duplicate rdf:ID %q", id)
+			return d.wrapRDFXMLError(fmt.Errorf("duplicate rdf:ID %q", id))
 		}
 		d.idsSeen[resolved] = struct{}{}
 	}
 	if nodeID := d.rdfAttrValue(attrs, "nodeID"); nodeID != "" {
 		if !isValidXMLName(nodeID) {
-			return fmt.Errorf("rdfxml: invalid rdf:nodeID %q", nodeID)
+			return d.wrapRDFXMLError(fmt.Errorf("invalid rdf:nodeID %q", nodeID))
 		}
 	}
 	if bagID := d.rdfAttrValue(attrs, "bagID"); bagID != "" {
 		if !isValidXMLName(bagID) {
-			return fmt.Errorf("rdfxml: invalid rdf:bagID %q", bagID)
+			return d.wrapRDFXMLError(fmt.Errorf("invalid rdf:bagID %q", bagID))
 		}
 	}
 	return nil
 }
 
-func (d *rdfxmlTripleDecoder) validateLiteralPropertyAttributes(attrs []xml.Attr) error {
+func (d *rdfxmltripleDecoder) validateLiteralPropertyAttributes(attrs []xml.Attr) error {
 	for _, attr := range attrs {
 		if attr.Name.Space == "" && (attr.Name.Local == "xmlns" || strings.HasPrefix(attr.Name.Local, "xmlns:")) {
 			continue
@@ -812,7 +762,7 @@ func (d *rdfxmlTripleDecoder) validateLiteralPropertyAttributes(attrs []xml.Attr
 		if attr.Name.Space == rdfXMLNS && (attr.Name.Local == "parseType" || attr.Name.Local == "ID" || attr.Name.Local == "annotation" || attr.Name.Local == "annotationNodeID") {
 			continue
 		}
-		return fmt.Errorf("rdfxml: rdf:parseType=\"Literal\" cannot be used with additional attributes")
+		return d.wrapRDFXMLError(fmt.Errorf("rdf:parseType=\"Literal\" cannot be used with additional attributes"))
 	}
 	return nil
 }
@@ -850,7 +800,7 @@ func isForbiddenRDFPropertyElement(local string) bool {
 	}
 }
 
-func (d *rdfxmlTripleDecoder) isNodeElement(el xml.StartElement) bool {
+func (d *rdfxmltripleDecoder) isNodeElement(el xml.StartElement) bool {
 	// A node element is either rdf:Description or an element with node element attributes
 	// (rdf:about, rdf:ID) or a typed node element (not in RDF namespace, used as subject)
 	if el.Name.Space == rdfXMLNS && el.Name.Local == "Description" {
@@ -883,12 +833,12 @@ func (d *rdfxmlTripleDecoder) isNodeElement(el xml.StartElement) bool {
 	return false
 }
 
-func (d *rdfxmlTripleDecoder) isPropertyElement(el xml.StartElement) bool {
+func (d *rdfxmltripleDecoder) isPropertyElement(el xml.StartElement) bool {
 	// A property element is any element that's not a node element and not a container element
 	return !d.isNodeElement(el) && !d.isContainerElement(el)
 }
 
-func (d *rdfxmlTripleDecoder) isContainerElement(el xml.StartElement) bool {
+func (d *rdfxmltripleDecoder) isContainerElement(el xml.StartElement) bool {
 	// Container elements: Bag, Seq, Alt, List
 	switch el.Name.Local {
 	case "Bag", "Seq", "Alt", "List":
@@ -897,7 +847,7 @@ func (d *rdfxmlTripleDecoder) isContainerElement(el xml.StartElement) bool {
 	return false
 }
 
-func (d *rdfxmlTripleDecoder) subjectFromNode(el xml.StartElement) Term {
+func (d *rdfxmltripleDecoder) subjectFromNode(el xml.StartElement) Term {
 	if about := d.attrValue(el.Attr, rdfXMLNS, "about"); about != "" {
 		return IRI{Value: d.resolveIRI(d.baseURI, about)}
 	}
@@ -910,7 +860,7 @@ func (d *rdfxmlTripleDecoder) subjectFromNode(el xml.StartElement) Term {
 	return d.newBlankNode()
 }
 
-func (d *rdfxmlTripleDecoder) resolveID(id string) string {
+func (d *rdfxmltripleDecoder) resolveID(id string) string {
 	// rdf:ID generates an IRI by appending #id to the base URI.
 	if d.baseURI == "" {
 		return "#" + id
@@ -918,12 +868,12 @@ func (d *rdfxmlTripleDecoder) resolveID(id string) string {
 	return d.baseURI + "#" + id
 }
 
-func (d *rdfxmlTripleDecoder) newBlankNode() BlankNode {
+func (d *rdfxmltripleDecoder) newBlankNode() BlankNode {
 	d.blankIDGen++
 	return BlankNode{ID: fmt.Sprintf("b%d", d.blankIDGen)}
 }
 
-func (d *rdfxmlTripleDecoder) containerKey(term Term) string {
+func (d *rdfxmltripleDecoder) containerKey(term Term) string {
 	switch value := term.(type) {
 	case IRI:
 		return "I:" + value.Value
@@ -934,13 +884,13 @@ func (d *rdfxmlTripleDecoder) containerKey(term Term) string {
 	}
 }
 
-func (d *rdfxmlTripleDecoder) nextContainerPredicate(key string) string {
+func (d *rdfxmltripleDecoder) nextContainerPredicate(key string) string {
 	index := d.containerIndex[key] + 1
 	d.containerIndex[key] = index
 	return rdfXMLNS + "_" + strconv.Itoa(index)
 }
 
-func (d *rdfxmlTripleDecoder) bumpContainerIndex(key string, index int) {
+func (d *rdfxmltripleDecoder) bumpContainerIndex(key string, index int) {
 	if index > d.containerIndex[key] {
 		d.containerIndex[key] = index
 	}
@@ -957,7 +907,7 @@ func parseContainerIndex(local string) (int, bool) {
 	return value, true
 }
 
-func (d *rdfxmlTripleDecoder) nextToken() (xml.Token, error) {
+func (d *rdfxmltripleDecoder) nextToken() (xml.Token, error) {
 	tok, err := d.dec.Token()
 	if err != nil {
 		return nil, err
@@ -971,14 +921,14 @@ func (d *rdfxmlTripleDecoder) nextToken() (xml.Token, error) {
 	return tok, nil
 }
 
-func (d *rdfxmlTripleDecoder) pushBase(el xml.StartElement) {
+func (d *rdfxmltripleDecoder) pushBase(el xml.StartElement) {
 	d.baseStack = append(d.baseStack, d.baseURI)
 	if base := d.attrValue(el.Attr, xmlNS, "base"); base != "" {
 		d.baseURI = d.resolveIRI(d.baseURI, base)
 	}
 }
 
-func (d *rdfxmlTripleDecoder) popBase() {
+func (d *rdfxmltripleDecoder) popBase() {
 	if len(d.baseStack) == 0 {
 		return
 	}
@@ -986,7 +936,7 @@ func (d *rdfxmlTripleDecoder) popBase() {
 	d.baseStack = d.baseStack[:len(d.baseStack)-1]
 }
 
-func (d *rdfxmlTripleDecoder) attrValue(attrs []xml.Attr, space, local string) string {
+func (d *rdfxmltripleDecoder) attrValue(attrs []xml.Attr, space, local string) string {
 	for _, attr := range attrs {
 		if attr.Name.Space == space && attr.Name.Local == local {
 			return attr.Value
@@ -995,7 +945,7 @@ func (d *rdfxmlTripleDecoder) attrValue(attrs []xml.Attr, space, local string) s
 	return ""
 }
 
-func (d *rdfxmlTripleDecoder) rdfAttrValue(attrs []xml.Attr, local string) string {
+func (d *rdfxmltripleDecoder) rdfAttrValue(attrs []xml.Attr, local string) string {
 	for _, attr := range attrs {
 		if attr.Name.Space == rdfXMLNS && attr.Name.Local == local {
 			return attr.Value
@@ -1013,26 +963,40 @@ func (d *rdfxmlTripleDecoder) rdfAttrValue(attrs []xml.Attr, local string) strin
 	return ""
 }
 
-func (d *rdfxmlTripleDecoder) resolveQName(space, local string) string {
+func (d *rdfxmltripleDecoder) resolveQName(space, local string) string {
 	if space == "" {
 		return local
 	}
 	return space + local
 }
 
-func (d *rdfxmlTripleDecoder) resolveIRI(base, relative string) string {
+// resolveIRI resolves a relative IRI against a base IRI.
+// This is a convenience method that delegates to the centralized resolveIRI function.
+func (d *rdfxmltripleDecoder) resolveIRI(base, relative string) string {
 	if base == "" {
 		return relative
 	}
-	// Use the same resolveIRI function from turtle.go
+	// Delegate to centralized IRI resolution function
 	return resolveIRI(base, relative)
 }
 
-func (d *rdfxmlTripleDecoder) findPrefix(namespace string) string {
+func (d *rdfxmltripleDecoder) findPrefix(namespace string) string {
 	for prefix, ns := range d.namespaces {
 		if ns == namespace {
 			return prefix
 		}
 	}
 	return ""
+}
+
+// wrapRDFXMLError wraps an error with the "rdfxml:" prefix for consistent error messages.
+func (d *rdfxmltripleDecoder) wrapRDFXMLError(err error) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("rdfxml: %w", err)
+}
+
+func (d *rdfxmltripleDecoder) errorf(format string, args ...interface{}) error {
+	return d.wrapRDFXMLError(fmt.Errorf(format, args...))
 }

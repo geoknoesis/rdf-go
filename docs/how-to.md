@@ -90,9 +90,9 @@ if err != nil {
 fmt.Printf("Parsed %d statements\n", count)
 ```
 
-## Use ReadAll for Small Datasets
+## Collect All Statements
 
-For small datasets that fit in memory, `ReadAll` loads all statements at once. **Warning:** This loads everything into memory, so use `Parse` or `NewReader` for large files:
+For small datasets, you can collect all statements into a slice using `Parse`:
 
 ```go
 import (
@@ -100,9 +100,12 @@ import (
     "github.com/geoknoesis/rdf-go"
 )
 
-// ReadAll loads all statements from the reader into a slice
-// FormatAuto enables automatic format detection
-stmts, err := rdf.ReadAll(context.Background(), reader, rdf.FormatAuto)
+// Collect all statements into a slice
+var stmts []rdf.Statement
+err := rdf.Parse(context.Background(), reader, rdf.FormatAuto, func(s rdf.Statement) error {
+    stmts = append(stmts, s)
+    return nil
+})
 if err != nil {
     // Handle errors (format detection failure, parse errors, etc.)
     return err

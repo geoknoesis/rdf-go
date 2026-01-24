@@ -421,20 +421,20 @@ func unescapeUnicodeEscape(builder *strings.Builder, s string, pos int) (int, er
 	if codePoint < 0 {
 		return 0, fmt.Errorf("invalid escape sequence")
 	}
-	
+
 	if codePoint >= unicodeSurrogateHighStart && codePoint <= unicodeSurrogateHighEnd {
 		// Surrogate pair - need second \uXXXX
 		return unescapeSurrogatePair(builder, s, pos, codePoint)
 	}
-	
+
 	if codePoint >= unicodeSurrogateLowStart && codePoint <= unicodeSurrogateLowEnd {
 		return 0, fmt.Errorf("invalid escape sequence")
 	}
-	
+
 	if !isValidUnicodeCodePoint(codePoint) {
 		return 0, fmt.Errorf("invalid escape sequence")
 	}
-	
+
 	builder.WriteRune(codePoint)
 	return 6, nil
 }

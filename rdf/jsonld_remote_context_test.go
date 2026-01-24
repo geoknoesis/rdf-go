@@ -42,7 +42,8 @@ func TestJSONLDRemoteContextSchemaOrg(t *testing.T) {
 		Context:        context.Background(),
 	}
 
-	dec := NewJSONLDTripleDecoder(strings.NewReader(input), opts)
+	// Use internal function since unified API doesn't support DocumentLoader yet
+	dec := newJSONLDtripleDecoderWithOptions(strings.NewReader(input), opts)
 	defer dec.Close()
 
 	// Collect all triples
@@ -104,7 +105,8 @@ func TestJSONLDRemoteContextArray(t *testing.T) {
 		Context:        context.Background(),
 	}
 
-	dec := NewJSONLDTripleDecoder(strings.NewReader(input), opts)
+	// Use internal function since unified API doesn't support DocumentLoader yet
+	dec := newJSONLDtripleDecoderWithOptions(strings.NewReader(input), opts)
 	defer dec.Close()
 
 	// Collect all triples
@@ -174,7 +176,8 @@ func TestJSONLDRemoteContextWithoutLoader(t *testing.T) {
 		Context: context.Background(),
 	}
 
-	dec := NewJSONLDTripleDecoder(strings.NewReader(input), opts)
+	// Use internal function since unified API doesn't support DocumentLoader yet
+	dec := newJSONLDtripleDecoderWithOptions(strings.NewReader(input), opts)
 	defer dec.Close()
 
 	// Should fail because context URL can't be resolved and terms can't be expanded
@@ -203,7 +206,8 @@ func TestJSONLDRemoteContextInNode(t *testing.T) {
 		Context:        context.Background(),
 	}
 
-	dec := NewJSONLDTripleDecoder(strings.NewReader(input), opts)
+	// Use internal function since unified API doesn't support DocumentLoader yet
+	dec := newJSONLDtripleDecoderWithOptions(strings.NewReader(input), opts)
 	defer dec.Close()
 
 	// Collect all triples
@@ -245,4 +249,3 @@ func TestJSONLDRemoteContextInNode(t *testing.T) {
 func isEOF(err error) bool {
 	return err == io.EOF
 }
-

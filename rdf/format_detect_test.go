@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestDetectFormatTurtle(t *testing.T) {
+func TestDetectFormatFromSampleTurtle(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
@@ -40,18 +40,18 @@ func TestDetectFormatTurtle(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			format, ok := DetectFormat(strings.NewReader(tt.input))
+			format, ok := detectFormatFromSample(strings.NewReader(tt.input))
 			if ok != tt.wantOK {
-				t.Errorf("DetectFormat() ok = %v, want %v", ok, tt.wantOK)
+				t.Errorf("detectFormatFromSample() ok = %v, want %v", ok, tt.wantOK)
 			}
 			if format != tt.expected {
-				t.Errorf("DetectFormat() format = %v, want %v", format, tt.expected)
+				t.Errorf("detectFormatFromSample() format = %v, want %v", format, tt.expected)
 			}
 		})
 	}
 }
 
-func TestDetectFormatNTriples(t *testing.T) {
+func TestDetectFormatFromSampleNTriples(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
@@ -74,18 +74,18 @@ func TestDetectFormatNTriples(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			format, ok := DetectFormat(strings.NewReader(tt.input))
+			format, ok := detectFormatFromSample(strings.NewReader(tt.input))
 			if ok != tt.wantOK {
-				t.Errorf("DetectFormat() ok = %v, want %v", ok, tt.wantOK)
+				t.Errorf("detectFormatFromSample() ok = %v, want %v", ok, tt.wantOK)
 			}
 			if format != tt.expected {
-				t.Errorf("DetectFormat() format = %v, want %v", format, tt.expected)
+				t.Errorf("detectFormatFromSample() format = %v, want %v", format, tt.expected)
 			}
 		})
 	}
 }
 
-func TestDetectFormatJSONLD(t *testing.T) {
+func TestDetectFormatFromSampleJSONLD(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
@@ -114,18 +114,18 @@ func TestDetectFormatJSONLD(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			format, ok := DetectFormat(strings.NewReader(tt.input))
+			format, ok := detectFormatFromSample(strings.NewReader(tt.input))
 			if ok != tt.wantOK {
-				t.Errorf("DetectFormat() ok = %v, want %v", ok, tt.wantOK)
+				t.Errorf("detectFormatFromSample() ok = %v, want %v", ok, tt.wantOK)
 			}
 			if format != tt.expected {
-				t.Errorf("DetectFormat() format = %v, want %v", format, tt.expected)
+				t.Errorf("detectFormatFromSample() format = %v, want %v", format, tt.expected)
 			}
 		})
 	}
 }
 
-func TestDetectFormatRDFXML(t *testing.T) {
+func TestDetectFormatFromSampleRDFXML(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
@@ -148,18 +148,18 @@ func TestDetectFormatRDFXML(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			format, ok := DetectFormat(strings.NewReader(tt.input))
+			format, ok := detectFormatFromSample(strings.NewReader(tt.input))
 			if ok != tt.wantOK {
-				t.Errorf("DetectFormat() ok = %v, want %v", ok, tt.wantOK)
+				t.Errorf("detectFormatFromSample() ok = %v, want %v", ok, tt.wantOK)
 			}
 			if format != tt.expected {
-				t.Errorf("DetectFormat() format = %v, want %v", format, tt.expected)
+				t.Errorf("detectFormatFromSample() format = %v, want %v", format, tt.expected)
 			}
 		})
 	}
 }
 
-func TestDetectFormatTriG(t *testing.T) {
+func TestDetectFormatFromSampleTriG(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
@@ -188,19 +188,19 @@ func TestDetectFormatTriG(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// TriG is a quad format, use DetectQuadFormat
-			format, ok := DetectQuadFormat(strings.NewReader(tt.input))
+			// TriG is a quad format, use detectQuadFormat
+			format, ok := detectQuadFormat(strings.NewReader(tt.input))
 			if ok != tt.wantOK {
-				t.Errorf("DetectQuadFormat() ok = %v, want %v", ok, tt.wantOK)
+				t.Errorf("detectQuadFormat() ok = %v, want %v", ok, tt.wantOK)
 			}
 			if format != tt.expected {
-				t.Errorf("DetectQuadFormat() format = %v, want %v", format, tt.expected)
+				t.Errorf("detectQuadFormat() format = %v, want %v", format, tt.expected)
 			}
 		})
 	}
 }
 
-func TestDetectFormatNQuads(t *testing.T) {
+func TestDetectFormatFromSampleNQuads(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
@@ -217,13 +217,13 @@ func TestDetectFormatNQuads(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// N-Quads is a quad format, use DetectQuadFormat
-			format, ok := DetectQuadFormat(strings.NewReader(tt.input))
+			// N-Quads is a quad format, use detectQuadFormat
+			format, ok := detectQuadFormat(strings.NewReader(tt.input))
 			if ok != tt.wantOK {
-				t.Errorf("DetectQuadFormat() ok = %v, want %v", ok, tt.wantOK)
+				t.Errorf("detectQuadFormat() ok = %v, want %v", ok, tt.wantOK)
 			}
 			if format != tt.expected {
-				t.Errorf("DetectQuadFormat() format = %v, want %v", format, tt.expected)
+				t.Errorf("detectQuadFormat() format = %v, want %v", format, tt.expected)
 			}
 		})
 	}
@@ -258,14 +258,13 @@ func TestDetectFormatAuto(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			format, ok := DetectFormatAuto(strings.NewReader(tt.input))
+			format, ok := detectFormatAuto(strings.NewReader(tt.input))
 			if ok != tt.wantOK {
-				t.Errorf("DetectFormatAuto() ok = %v, want %v", ok, tt.wantOK)
+				t.Errorf("detectFormatAuto() ok = %v, want %v", ok, tt.wantOK)
 			}
 			if format != tt.expected {
-				t.Errorf("DetectFormatAuto() format = %v, want %v", format, tt.expected)
+				t.Errorf("detectFormatAuto() format = %v, want %v", format, tt.expected)
 			}
 		})
 	}
 }
-

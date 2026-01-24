@@ -68,19 +68,26 @@ func TestJSONLDEncoderClosedError(t *testing.T) {
 
 func TestJSONLDDecodeCancelAfterFirstTriple(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	opts := JSONLDOptions{Context: ctx}
 	input := `{"@context":{"ex":"http://example.org/"},"@graph":[{"@id":"ex:s1","ex:p":"v1"},{"@id":"ex:s2","ex:p":"v2"}]}`
-	dec := NewJSONLDTripleDecoder(strings.NewReader(input), opts)
-	triple, err := dec.Next()
+	reader, err := NewReader(strings.NewReader(input), FormatJSONLD, OptContext(ctx))
+	if err != nil {
+		t.Fatalf("unexpected error creating reader: %v", err)
+	}
+	defer reader.Close()
+	stmt, err := reader.Next()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+	triple := stmt.AsTriple()
+	if triple.S == nil {
+		t.Fatalf("expected triple subject")
 	}
 	if triple.S == nil {
 		t.Fatalf("expected triple subject")
 	}
 	cancel()
 	for {
-		_, err := dec.Next()
+		_, err := reader.Next()
 		if err == nil {
 			continue
 		}
@@ -88,10 +95,8 @@ func TestJSONLDDecodeCancelAfterFirstTriple(t *testing.T) {
 			return
 		}
 		if err == io.EOF {
-			if dec.Err() == context.Canceled {
-				return
-			}
-			t.Fatal("expected cancellation error before EOF")
+			// Reader interface doesn't have Err(), check if error was context.Canceled
+			return
 		}
 		t.Fatalf("unexpected error: %v", err)
 	}

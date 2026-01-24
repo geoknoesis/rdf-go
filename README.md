@@ -16,7 +16,7 @@ Published by **Geoknoesis LLC** - www.geoknoesis.com
 - Streaming readers (pull style) and writers (push style).
 - Unified API: single `Reader` and `Writer` interfaces for all formats.
 - `Statement` type: represents either a triple (G is nil) or a quad (G is non-nil).
-- Convenience helpers: `Parse`, `ReadAll`, `WriteAll`.
+- Convenience helper: `Parse` for streaming with handler functions.
 - RDF-star via `TripleTerm` values.
 - Multiple formats: Turtle, TriG, N-Triples, N-Quads, RDF/XML, JSON-LD.
 - Automatic format detection with `FormatAuto`.
@@ -109,9 +109,9 @@ for {
 }
 ```
 
-### Read All (Convenience)
+### Read All Statements
 
-For small datasets that fit in memory, `ReadAll` provides a simple way to load all statements at once. **Note:** This loads everything into memory, so use `Parse` or `NewReader` for large files:
+For small datasets, you can collect all statements into a slice using `Parse`:
 
 ```go
 import (
@@ -119,9 +119,12 @@ import (
     "github.com/geoknoesis/rdf-go"
 )
 
-// ReadAll loads all statements from the reader into a slice
-// FormatAuto enables automatic format detection
-stmts, err := rdf.ReadAll(context.Background(), reader, rdf.FormatAuto)
+// Collect all statements into a slice
+var stmts []rdf.Statement
+err := rdf.Parse(context.Background(), reader, rdf.FormatAuto, func(s rdf.Statement) error {
+    stmts = append(stmts, s)
+    return nil
+})
 if err != nil {
     // Handle errors (format detection failure, parse errors, etc.)
     log.Fatal(err)
@@ -190,13 +193,12 @@ fmt.Print(buf.String())
 // Output: <http://example.org/s> <http://example.org/p> <http://example.org/o> .
 ```
 
-### Write All (Convenience)
+### Write Multiple Statements
 
-For writing multiple statements at once, `WriteAll` provides a convenient helper:
+For writing multiple statements, use `NewWriter` with a loop:
 
 ```go
 import (
-    "context"
     "os"
     "github.com/geoknoesis/rdf-go"
 )
@@ -221,9 +223,18 @@ stmts := []rdf.Statement{
 file, _ := os.Create("output.ttl")
 defer file.Close()
 
-err := rdf.WriteAll(context.Background(), file, rdf.FormatTurtle, stmts)
+writer, err := rdf.NewWriter(file, rdf.FormatTurtle)
 if err != nil {
-    // Handle write errors
+    log.Fatal(err)
+}
+defer writer.Close()
+
+for _, stmt := range stmts {
+    if err := writer.Write(stmt); err != nil {
+        log.Fatal(err)
+    }
+}
+if err := writer.Flush(); err != nil {
     log.Fatal(err)
 }
 ```
@@ -257,6 +268,36 @@ enc.Write(stmt)
 ```
 
 
+
+## IRI Validation
+
+The library provides optional strict IRI validation according to RFC 3987:
+
+```go
+import "github.com/geoknoesis/rdf-go"
+
+// Enable strict IRI validation
+dec, err := rdf.NewReader(reader, rdf.FormatTurtle, rdf.OptStrictIRIValidation())
+if err != nil {
+    return err
+}
+defer dec.Close()
+
+// Or validate IRIs programmatically
+iri := "http://example.org/resource"
+if err := rdf.ValidateIRI(iri); err != nil {
+    // Handle invalid IRI
+    return fmt.Errorf("invalid IRI: %w", err)
+}
+```
+
+**Note:** By default, IRI validation is lenient (no validation) for backward compatibility. Format-specific behavior:
+- **N-Triples**: Always validates that IRIs have a scheme (absolute IRIs required per spec)
+- **Turtle/TriG**: Allows relative IRIs with base resolution; no validation by default
+- **RDF/XML**: Allows relative IRIs with base resolution; no validation by default
+- **JSON-LD**: No validation by default
+
+Enable `OptStrictIRIValidation()` for additional RFC 3987 validation across all formats.
 
 ## Error Handling
 
@@ -390,17 +431,50 @@ Available options:
 - `OptMaxDepth(n)` - Set maximum nesting depth limit
 - `OptMaxTriples(n)` - Set maximum number of triples/quads to process
 - `OptSafeLimits()` - Apply safe limits suitable for untrusted input
+- `OptStrictIRIValidation()` - Enable strict IRI validation according to RFC 3987
+- `OptExpandRDFXMLContainers()` - Enable RDF/XML container membership expansion (default: enabled)
+- `OptDisableRDFXMLContainerExpansion()` - Disable RDF/XML container membership expansion
+
+## Versioning & Compatibility
+
+This library follows [Semantic Versioning](https://semver.org/):
+
+- **v1.x.x**: Backward compatible changes only (new features, bug fixes)
+- **v2.x.x**: Breaking changes (if needed in the future)
+
+### API Stability
+
+The following APIs are considered stable and will maintain backward compatibility:
+- `Reader` and `Writer` interfaces
+- `Statement`, `Triple`, `Quad` types
+- `Term` interface and implementations (`IRI`, `BlankNode`, `Literal`, `TripleTerm`)
+- `NewReader()`, `NewWriter()`, `Parse()` functions
+- Format constants (`FormatTurtle`, `FormatNTriples`, etc.)
+- Option functions (`OptMaxDepth`, `OptSafeLimits`, etc.)
+
+### Deprecation Policy
+
+- Deprecated APIs will be marked with `// Deprecated:` comments
+- Deprecated APIs will be removed in the next major version
+- At least one minor version will include deprecation warnings before removal
+
+### Go Version Support
+
+- **Minimum Go version**: 1.25.5
+- The library uses pure Go (no CGO dependencies)
+- Compatible with all Go versions that support the minimum version
 
 ## Notes
 
 - The API is intentionally small and favors streaming. For large inputs,
-  prefer `NewReader` or `Parse` instead of `ReadAll`.
+  use `NewReader` or `Parse` for efficient processing.
 - All formats work with the unified `Reader` and `Writer` interfaces.
 - The `Statement` type represents either a triple (G is nil) or a quad (G is non-nil).
 - Use `stmt.IsTriple()` or `stmt.IsQuad()` to check the statement type.
 - For any unsupported format, `NewReader`/`NewWriter` returns `rdf.ErrUnsupportedFormat`.
-- RDF/XML container elements (rdf:Bag, rdf:Seq, rdf:Alt, rdf:List) are parsed as node elements;
-  container membership expansion is not implemented.
+- RDF/XML container elements (rdf:Bag, rdf:Seq, rdf:Alt, rdf:List) support container membership expansion.
+  By default, `rdf:li` elements are automatically converted to `rdf:_1`, `rdf:_2`, etc.
+  Use `OptDisableRDFXMLContainerExpansion()` to disable this behavior.
 
 ## Security and Limits
 
@@ -462,6 +536,50 @@ Error messages automatically include:
 - Input excerpts showing context around the error
 - Caret indicators pointing to the error position
 
+### Error Codes
+
+For programmatic error handling, use the `Code()` function to get error codes:
+
+```go
+import "github.com/geoknoesis/rdf-go"
+
+stmt, err := dec.Next()
+if err != nil {
+    code := rdf.Code(err)
+    switch code {
+    case rdf.ErrCodeUnsupportedFormat:
+        // Handle unsupported format
+    case rdf.ErrCodeLineTooLong:
+        // Handle line too long
+    case rdf.ErrCodeStatementTooLong:
+        // Handle statement too long
+    case rdf.ErrCodeDepthExceeded:
+        // Handle depth exceeded
+    case rdf.ErrCodeTripleLimitExceeded:
+        // Handle triple limit exceeded
+    case rdf.ErrCodeContextCanceled:
+        // Handle context cancellation
+    case rdf.ErrCodeParseError:
+        // Handle general parse error
+    default:
+        // Handle unknown error
+    }
+}
+```
+
+**Available Error Codes:**
+- `ErrCodeUnsupportedFormat` - Unsupported RDF format
+- `ErrCodeLineTooLong` - Line exceeded configured limit
+- `ErrCodeStatementTooLong` - Statement exceeded configured limit
+- `ErrCodeDepthExceeded` - Nesting depth exceeded configured limit
+- `ErrCodeTripleLimitExceeded` - Maximum number of triples/quads exceeded
+- `ErrCodeParseError` - General parse error
+- `ErrCodeContextCanceled` - Context was canceled
+- `ErrCodeInvalidIRI` - Invalid IRI encountered
+- `ErrCodeInvalidLiteral` - Invalid literal encountered
+
+**Note:** `Code()` returns an empty string for `nil` errors and `io.EOF` (which is not an error condition).
+
 ### JSON-LD Options
 
 JSON-LD decoding supports additional semantic limits via `JSONLDOptions`:
@@ -486,6 +604,82 @@ dec, err := rdf.NewReader(r, rdf.FormatJSONLD)
 
 ---
 
+## Output Determinism
+
+The library provides deterministic output for most formats, with some format-specific considerations:
+
+### Deterministic Formats
+
+**Turtle/TriG:**
+- Prefix declarations are sorted alphabetically (deterministic order)
+- Statement order matches input order
+- Prefix selection uses longest matching namespace (deterministic algorithm)
+- Blank node labels are preserved from input
+
+**N-Triples/N-Quads:**
+- Output order matches input order exactly
+- No prefix abbreviations (fully expanded IRIs)
+- Fully deterministic output
+
+**RDF/XML:**
+- XML structure is deterministic
+- Element order matches input order
+
+### Non-Deterministic Formats
+
+**JSON-LD:**
+- ⚠️ **Key ordering is non-deterministic** due to Go's map iteration order
+- JSON object keys may appear in different orders across runs
+- This is a limitation of Go's `encoding/json` package
+- For deterministic JSON-LD output, use the `CanonicalizeJSONLD()` function:
+
+```go
+import "github.com/geoknoesis/rdf-go"
+
+// Encode to JSON-LD
+var buf bytes.Buffer
+enc, _ := rdf.NewWriter(&buf, rdf.FormatJSONLD)
+enc.Write(stmt)
+enc.Close()
+
+// Canonicalize for deterministic output
+canonical, err := rdf.CanonicalizeJSONLD(buf.Bytes())
+if err != nil {
+    return err
+}
+// canonical now contains deterministic JSON-LD
+```
+
+### Best Practices
+
+- For reproducible builds, use Turtle, TriG, N-Triples, or N-Quads
+- If JSON-LD determinism is required, post-process with a JSON canonicalizer
+- Round-trip tests verify semantic equivalence (isomorphic graphs) rather than byte-for-byte equality
+
+## Supported Features Matrix
+
+| Feature | Turtle | TriG | N-Triples | N-Quads | RDF/XML | JSON-LD |
+|---------|--------|------|-----------|---------|---------|---------|
+| **Parsing** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Encoding** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Named Graphs** | ❌ | ✅ | ❌ | ✅ | ❌ | ✅ |
+| **Prefixes** | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ |
+| **Base IRI** | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ |
+| **Blank Nodes** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Collections** | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ |
+| **RDF-star** | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
+| **Streaming** | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️* |
+| **Deterministic Output** | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+
+\* JSON-LD streaming has limitations: buffers `@graph` when it appears before `@context`
+
+### Format-Specific Notes
+
+- **RDF/XML**: Container membership expansion is implemented and enabled by default.
+  Use `OptDisableRDFXMLContainerExpansion()` to disable automatic expansion of `rdf:li` to `rdf:_n`.
+- **JSON-LD**: Compaction and framing are not supported (I/O library only)
+- **JSON-LD**: Remote context resolution supported when `DocumentLoader` is provided
+
 ## Performance
 
 The library is optimized for performance with:
@@ -494,18 +688,32 @@ The library is optimized for performance with:
 - Efficient string operations and parsing
 - Comprehensive benchmarks available in `rdf/benchmarks_test.go`
 
+### Running Benchmarks
+
 Run benchmarks:
 ```bash
-go test ./rdf -bench=. -benchmem
+go test ./rdf -bench=. -benchmem -run=^$
 ```
 
-Key benchmarks include:
+### Benchmark Results
+
+Benchmark results vary by system and input size. Key benchmarks include:
+
 - `BenchmarkTurtleDecodeLarge` - Large Turtle file decoding
 - `BenchmarkNTriplesDecodeLarge` - Large N-Triples file decoding
 - `BenchmarkTriGDecode` - TriG format decoding
 - `BenchmarkJSONLDDecode` - JSON-LD format decoding
 - `BenchmarkTurtleEncode` - Turtle encoding
+- `BenchmarkNTriplesEncodeLarge` - N-Triples encoding
 - `BenchmarkUnescapeString` - String unescaping performance
 - `BenchmarkResolveIRI` - IRI resolution performance
 - `BenchmarkFormatDetection` - Format detection performance
+
+**Performance Characteristics:**
+- **Streaming**: All formats support streaming with constant memory usage (except JSON-LD edge cases)
+- **Throughput**: Typically 10K-100K+ triples/second depending on format and input complexity
+- **Memory**: O(1) memory usage for streaming parsers (bounded by security limits)
+- **Allocations**: Optimized to minimize allocations using buffer reuse and `strings.Builder`
+
+For detailed performance analysis, run benchmarks on your target system and input data.
 

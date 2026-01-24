@@ -25,27 +25,22 @@ type TriGEncodeOptions struct {
 }
 
 // Triple encoder for Turtle
-type turtleTripleEncoder struct {
+type turtletripleEncoder struct {
 	writer  *bufio.Writer
 	err     error
 	started bool
 	opts    TurtleEncodeOptions
 }
 
-func newTurtleTripleEncoder(w io.Writer) TripleEncoder {
-	return newTurtleTripleEncoderWithOptions(w, TurtleEncodeOptions{})
+func newTurtletripleEncoder(w io.Writer) tripleEncoder {
+	return newTurtletripleEncoderWithOptions(w, TurtleEncodeOptions{})
 }
 
-func newTurtleTripleEncoderWithOptions(w io.Writer, opts TurtleEncodeOptions) TripleEncoder {
-	return &turtleTripleEncoder{writer: bufio.NewWriter(w), opts: opts}
+func newTurtletripleEncoderWithOptions(w io.Writer, opts TurtleEncodeOptions) tripleEncoder {
+	return &turtletripleEncoder{writer: bufio.NewWriter(w), opts: opts}
 }
 
-// NewTurtleTripleEncoder creates a Turtle triple encoder with options.
-func NewTurtleTripleEncoder(w io.Writer, opts TurtleEncodeOptions) TripleEncoder {
-	return newTurtleTripleEncoderWithOptions(w, opts)
-}
-
-func (e *turtleTripleEncoder) Write(t Triple) error {
+func (e *turtletripleEncoder) Write(t Triple) error {
 	if e.err != nil {
 		return e.err
 	}
@@ -68,14 +63,14 @@ func (e *turtleTripleEncoder) Write(t Triple) error {
 	return err
 }
 
-func (e *turtleTripleEncoder) Flush() error {
+func (e *turtletripleEncoder) Flush() error {
 	if e.err != nil {
 		return e.err
 	}
 	return e.writer.Flush()
 }
 
-func (e *turtleTripleEncoder) Close() error {
+func (e *turtletripleEncoder) Close() error {
 	if e.err != nil {
 		return e.err
 	}
@@ -87,7 +82,7 @@ func (e *turtleTripleEncoder) Close() error {
 	return nil
 }
 
-func (e *turtleTripleEncoder) writeHeader() error {
+func (e *turtletripleEncoder) writeHeader() error {
 	e.started = true
 	if e.opts.BaseIRI != "" {
 		if _, err := e.writer.WriteString("@base <" + e.opts.BaseIRI + "> .\n"); err != nil {
@@ -114,27 +109,22 @@ func (e *turtleTripleEncoder) writeHeader() error {
 }
 
 // Quad encoder for TriG
-type trigQuadEncoder struct {
+type trigquadEncoder struct {
 	writer  *bufio.Writer
 	err     error
 	started bool
 	opts    TriGEncodeOptions
 }
 
-func newTriGQuadEncoder(w io.Writer) QuadEncoder {
-	return newTriGQuadEncoderWithOptions(w, TriGEncodeOptions{})
+func newTriGquadEncoder(w io.Writer) quadEncoder {
+	return newTriGquadEncoderWithOptions(w, TriGEncodeOptions{})
 }
 
-func newTriGQuadEncoderWithOptions(w io.Writer, opts TriGEncodeOptions) QuadEncoder {
-	return &trigQuadEncoder{writer: bufio.NewWriter(w), opts: opts}
+func newTriGquadEncoderWithOptions(w io.Writer, opts TriGEncodeOptions) quadEncoder {
+	return &trigquadEncoder{writer: bufio.NewWriter(w), opts: opts}
 }
 
-// NewTriGQuadEncoder creates a TriG quad encoder with options.
-func NewTriGQuadEncoder(w io.Writer, opts TriGEncodeOptions) QuadEncoder {
-	return newTriGQuadEncoderWithOptions(w, opts)
-}
-
-func (e *trigQuadEncoder) Write(q Quad) error {
+func (e *trigquadEncoder) Write(q Quad) error {
 	if e.err != nil {
 		return e.err
 	}
@@ -184,14 +174,14 @@ func (e *trigQuadEncoder) Write(q Quad) error {
 	return err
 }
 
-func (e *trigQuadEncoder) Flush() error {
+func (e *trigquadEncoder) Flush() error {
 	if e.err != nil {
 		return e.err
 	}
 	return e.writer.Flush()
 }
 
-func (e *trigQuadEncoder) Close() error {
+func (e *trigquadEncoder) Close() error {
 	if e.err != nil {
 		return e.err
 	}
@@ -203,7 +193,7 @@ func (e *trigQuadEncoder) Close() error {
 	return nil
 }
 
-func (e *trigQuadEncoder) writeHeader() error {
+func (e *trigquadEncoder) writeHeader() error {
 	e.started = true
 	if e.opts.BaseIRI != "" {
 		if _, err := e.writer.WriteString("@base <" + e.opts.BaseIRI + "> .\n"); err != nil {

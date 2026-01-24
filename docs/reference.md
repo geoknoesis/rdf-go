@@ -327,53 +327,6 @@ err := rdf.Parse(context.Background(), reader, rdf.FormatTurtle, func(s rdf.Stat
 })
 ```
 
-### ReadAll
-
-```go
-func ReadAll(ctx context.Context, r io.Reader, format Format, opts ...Option) ([]Statement, error)
-```
-
-`ReadAll` reads all statements from the reader into memory. This is a convenience function for small datasets. For large inputs, use `Parse` or `NewReader` for streaming.
-
-**Parameters:**
-- `ctx` - Context for cancellation
-- `r` - Input reader
-- `format` - Format to parse (use `FormatAuto` for auto-detection)
-- `opts` - Optional configuration options
-
-**Returns:**
-- `[]Statement` - All statements from the input
-- `error` - Error if parsing fails
-
-**Example:**
-```go
-stmts, err := rdf.ReadAll(context.Background(), reader, rdf.FormatAuto)
-```
-
-### WriteAll
-
-```go
-func WriteAll(ctx context.Context, w io.Writer, format Format, stmts []Statement, opts ...Option) error
-```
-
-`WriteAll` writes all statements to the writer.
-
-**Parameters:**
-- `ctx` - Context for cancellation
-- `w` - Output writer
-- `format` - Format to encode
-- `stmts` - Statements to write
-- `opts` - Optional configuration options
-
-**Returns:**
-- `error` - Error if encoding fails
-
-**Example:**
-```go
-stmts := []rdf.Statement{...}
-err := rdf.WriteAll(context.Background(), writer, rdf.FormatTurtle, stmts)
-```
-
 ### ParseFormat
 
 ```go
@@ -488,13 +441,13 @@ type ParseError struct {
 
 2. **Handle EOF properly**: Check for `io.EOF` when `Next()` returns an error
 
-3. **Use streaming for large files**: Prefer `NewReader` or `Parse` over `ReadAll` for large inputs
+3. **Use streaming for large files**: Use `NewReader` or `Parse` for efficient processing of large inputs
 
 4. **Check format support**: Use `ParseFormat` to validate format strings before creating readers/writers
 
 5. **Use Statement type**: The unified `Statement` type works with all formats. Use `stmt.IsTriple()` or `stmt.IsQuad()` to check the statement type.
 
-6. **Use context for cancellation**: Pass a context to `Parse` and `ReadAll` to enable cancellation
+6. **Use context for cancellation**: Pass a context to `Parse` to enable cancellation
 
 7. **Flush writers**: Call `Flush()` before `Close()` to ensure all data is written
 

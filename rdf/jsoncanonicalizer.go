@@ -342,4 +342,3 @@ func numberToJSON(ieeeF64 float64) (res string, err error) {
 	}
 	return sign + es6Formatted, nil
 }
-

@@ -8,13 +8,13 @@ import (
 
 func TestParseErrorWithExcerpt(t *testing.T) {
 	// Test error with column information and excerpt
-	err := WrapParseErrorWithPosition("turtle", "ex:s ex:p ex:o .", 1, 8, -1, errors.New("unexpected token"))
-	
+	err := wrapParseErrorWithPosition("turtle", "ex:s ex:p ex:o .", 1, 8, -1, errors.New("unexpected token"))
+
 	var parseErr *ParseError
 	if !errors.As(err, &parseErr) {
 		t.Fatalf("expected ParseError, got %T", err)
 	}
-	
+
 	errMsg := parseErr.Error()
 	if !strings.Contains(errMsg, "turtle:1:8") {
 		t.Errorf("expected error message to contain position, got: %q", errMsg)
@@ -31,13 +31,13 @@ func TestParseErrorWithExcerpt(t *testing.T) {
 func TestParseErrorExcerptWithCaret(t *testing.T) {
 	// Test error with column information showing caret
 	statement := "ex:s ex:p ex:o ."
-	err := WrapParseErrorWithPosition("turtle", statement, 1, 8, -1, errors.New("parse error"))
-	
+	err := wrapParseErrorWithPosition("turtle", statement, 1, 8, -1, errors.New("parse error"))
+
 	var parseErr *ParseError
 	if !errors.As(err, &parseErr) {
 		t.Fatalf("expected ParseError, got %T", err)
 	}
-	
+
 	errMsg := parseErr.Error()
 	// Should contain caret pointing to error position
 	if !strings.Contains(errMsg, "^") {
@@ -48,13 +48,13 @@ func TestParseErrorExcerptWithCaret(t *testing.T) {
 
 func TestParseErrorWithoutPosition(t *testing.T) {
 	// Test error without position information
-	err := WrapParseError("turtle", "ex:s ex:p ex:o .", -1, errors.New("parse error"))
-	
+	err := wrapParseError("turtle", "ex:s ex:p ex:o .", -1, errors.New("parse error"))
+
 	var parseErr *ParseError
 	if !errors.As(err, &parseErr) {
 		t.Fatalf("expected ParseError, got %T", err)
 	}
-	
+
 	errMsg := parseErr.Error()
 	if !strings.Contains(errMsg, "turtle") {
 		t.Errorf("expected error message to contain format, got: %q", errMsg)
@@ -67,17 +67,16 @@ func TestParseErrorWithoutPosition(t *testing.T) {
 func TestParseErrorLongStatement(t *testing.T) {
 	// Test error with long statement (should be truncated)
 	longStatement := strings.Repeat("ex:s ex:p ex:o . ", 20)
-	err := WrapParseErrorWithPosition("turtle", longStatement, 1, 50, -1, errors.New("parse error"))
-	
+	err := wrapParseErrorWithPosition("turtle", longStatement, 1, 50, -1, errors.New("parse error"))
+
 	var parseErr *ParseError
 	if !errors.As(err, &parseErr) {
 		t.Fatalf("expected ParseError, got %T", err)
 	}
-	
+
 	errMsg := parseErr.Error()
 	// Should contain truncated excerpt
 	if len(errMsg) > 500 {
 		t.Errorf("expected error message to be truncated, got length %d", len(errMsg))
 	}
 }
-

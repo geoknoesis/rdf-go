@@ -3,25 +3,25 @@ package rdf
 import "io"
 
 // New triple decoder for Turtle
-type turtleTripleDecoder struct {
+type turtletripleDecoder struct {
 	parser *turtleParser
 }
 
-func newTurtleTripleDecoder(r io.Reader) TripleDecoder {
-	return newTurtleTripleDecoderWithOptions(r, DefaultDecodeOptions())
+func newTurtletripleDecoder(r io.Reader) tripleDecoder {
+	return newTurtletripleDecoderWithOptions(r, defaultDecodeOptions())
 }
 
-func newTurtleTripleDecoderWithOptions(r io.Reader, opts DecodeOptions) TripleDecoder {
-	return &turtleTripleDecoder{
+func newTurtletripleDecoderWithOptions(r io.Reader, opts decodeOptions) tripleDecoder {
+	return &turtletripleDecoder{
 		parser: newTurtleParser(r, opts),
 	}
 }
 
-func (d *turtleTripleDecoder) Next() (Triple, error) {
+func (d *turtletripleDecoder) Next() (Triple, error) {
 	return d.parser.NextTriple()
 }
 
-func (d *turtleTripleDecoder) Err() error { return d.parser.Err() }
-func (d *turtleTripleDecoder) Close() error {
+func (d *turtletripleDecoder) Err() error { return d.parser.Err() }
+func (d *turtletripleDecoder) Close() error {
 	return nil
 }

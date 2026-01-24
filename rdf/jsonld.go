@@ -11,7 +11,7 @@ import (
 )
 
 // Triple decoder for JSON-LD
-type jsonldTripleDecoder struct {
+type jsonldtripleDecoder struct {
 	out    chan Triple
 	err    error
 	errMu  sync.Mutex
@@ -21,13 +21,13 @@ type jsonldTripleDecoder struct {
 	wg     sync.WaitGroup
 }
 
-func newJSONLDTripleDecoder(r io.Reader) TripleDecoder {
-	return newJSONLDTripleDecoderWithOptions(r, JSONLDOptions{})
+func newJSONLDtripleDecoder(r io.Reader) tripleDecoder {
+	return newJSONLDtripleDecoderWithOptions(r, JSONLDOptions{})
 }
 
-func newJSONLDTripleDecoderWithOptions(r io.Reader, opts JSONLDOptions) TripleDecoder {
+func newJSONLDtripleDecoderWithOptions(r io.Reader, opts JSONLDOptions) tripleDecoder {
 	ctx, cancel := jsonldContextWithCancel(opts)
-	dec := &jsonldTripleDecoder{out: make(chan Triple, 32), ctx: ctx, cancel: cancel}
+	dec := &jsonldtripleDecoder{out: make(chan Triple, defaultChannelBufferSize), ctx: ctx, cancel: cancel}
 	dec.wg.Add(1)
 	go func() {
 		defer dec.wg.Done()
@@ -55,7 +55,7 @@ func newJSONLDTripleDecoderWithOptions(r io.Reader, opts JSONLDOptions) TripleDe
 	return dec
 }
 
-func (d *jsonldTripleDecoder) Next() (Triple, error) {
+func (d *jsonldtripleDecoder) Next() (Triple, error) {
 	if err := checkJSONLDContext(d.ctx); err != nil {
 		return Triple{}, err
 	}
@@ -69,8 +69,8 @@ func (d *jsonldTripleDecoder) Next() (Triple, error) {
 	return triple, nil
 }
 
-func (d *jsonldTripleDecoder) Err() error { return d.getErr() }
-func (d *jsonldTripleDecoder) Close() error {
+func (d *jsonldtripleDecoder) Err() error { return d.getErr() }
+func (d *jsonldtripleDecoder) Close() error {
 	if d.closed {
 		return d.getErr()
 	}
@@ -82,7 +82,7 @@ func (d *jsonldTripleDecoder) Close() error {
 	return nil
 }
 
-type jsonldQuadDecoder struct {
+type jsonldquadDecoder struct {
 	out    chan Quad
 	err    error
 	errMu  sync.Mutex
@@ -92,9 +92,9 @@ type jsonldQuadDecoder struct {
 	wg     sync.WaitGroup
 }
 
-func newJSONLDQuadDecoderWithOptions(r io.Reader, opts JSONLDOptions) QuadDecoder {
+func newJSONLDquadDecoderWithOptions(r io.Reader, opts JSONLDOptions) quadDecoder {
 	ctx, cancel := jsonldContextWithCancel(opts)
-	dec := &jsonldQuadDecoder{out: make(chan Quad, 32), ctx: ctx, cancel: cancel}
+	dec := &jsonldquadDecoder{out: make(chan Quad, defaultChannelBufferSize), ctx: ctx, cancel: cancel}
 	dec.wg.Add(1)
 	go func() {
 		defer dec.wg.Done()
@@ -122,7 +122,7 @@ func newJSONLDQuadDecoderWithOptions(r io.Reader, opts JSONLDOptions) QuadDecode
 	return dec
 }
 
-func (d *jsonldQuadDecoder) Next() (Quad, error) {
+func (d *jsonldquadDecoder) Next() (Quad, error) {
 	if err := checkJSONLDContext(d.ctx); err != nil {
 		return Quad{}, err
 	}
@@ -136,8 +136,8 @@ func (d *jsonldQuadDecoder) Next() (Quad, error) {
 	return quad, nil
 }
 
-func (d *jsonldQuadDecoder) Err() error { return d.getErr() }
-func (d *jsonldQuadDecoder) Close() error {
+func (d *jsonldquadDecoder) Err() error { return d.getErr() }
+func (d *jsonldquadDecoder) Close() error {
 	if d.closed {
 		return d.getErr()
 	}
@@ -625,6 +625,9 @@ func parseJSONLDGraph(graph interface{}, ctx jsonldContext, graphName Term, stat
 	return nil
 }
 
+// parseJSONLDNode parses a JSON-LD node object and emits quads.
+// It handles @context, @id, @type, @graph, and regular predicate-value pairs.
+// The function processes nodes recursively for nested @graph structures.
 func parseJSONLDNode(node map[string]interface{}, ctx jsonldContext, graphName Term, state *jsonldState, sink jsonldQuadSink) error {
 	if err := state.checkContext(); err != nil {
 		return err
@@ -632,43 +635,23 @@ func parseJSONLDNode(node map[string]interface{}, ctx jsonldContext, graphName T
 	if err := state.bumpNodeCount(); err != nil {
 		return err
 	}
+	// Apply node-level @context if present
 	ctx = ctx.withContext(node["@context"])
+	// Extract and resolve subject from @id
 	subject, err := jsonldSubject(node["@id"], ctx, state)
 	if err != nil {
 		return err
 	}
 
-	for key, raw := range node {
-		if err := state.checkContext(); err != nil {
-			return err
-		}
-		if strings.HasPrefix(key, "@") {
-			continue
-		}
-		pred := IRI{Value: expandJSONLDTerm(key, ctx)}
-		if pred.Value == "" {
-			return fmt.Errorf("jsonld: cannot resolve predicate %q", key)
-		}
-		if err := emitJSONLDValue(subject, pred, raw, ctx, graphName, state, sink); err != nil {
-			return err
-		}
+	// Process all predicate-value pairs in the node
+	if err := emitJSONLDPredicateValues(node, subject, ctx, graphName, state, sink); err != nil {
+		return err
 	}
+
+	// Emit RDF type statements if @type is present
 	if rawTypes, ok := node["@type"]; ok {
-		typeVals, ok := rawTypes.([]interface{})
-		if ok {
-			for _, t := range typeVals {
-				if tStr, ok := t.(string); ok {
-					obj := IRI{Value: expandJSONLDTerm(tStr, ctx)}
-					if err := sink(Quad{S: subject, P: IRI{Value: rdfTypeIRI}, O: obj, G: graphName}); err != nil {
-						return err
-					}
-				}
-			}
-		} else if tStr, ok := rawTypes.(string); ok {
-			obj := IRI{Value: expandJSONLDTerm(tStr, ctx)}
-			if err := sink(Quad{S: subject, P: IRI{Value: rdfTypeIRI}, O: obj, G: graphName}); err != nil {
-				return err
-			}
+		if err := emitJSONLDTypeStatements(subject, rawTypes, ctx, graphName, sink); err != nil {
+			return err
 		}
 	}
 	if graph, ok := node["@graph"]; ok {
@@ -677,6 +660,9 @@ func parseJSONLDNode(node map[string]interface{}, ctx jsonldContext, graphName T
 	return nil
 }
 
+// emitJSONLDValue emits quads for a predicate-value pair in JSON-LD.
+// It handles arrays (multiple values), objects (@id, @value, @list), and primitive literals.
+// The function recursively processes arrays and nested structures.
 func emitJSONLDValue(subject Term, pred IRI, raw interface{}, ctx jsonldContext, graphName Term, state *jsonldState, sink jsonldQuadSink) error {
 	if err := state.checkContext(); err != nil {
 		return err
@@ -692,36 +678,14 @@ func emitJSONLDValue(subject Term, pred IRI, raw interface{}, ctx jsonldContext,
 			}
 		}
 	case map[string]interface{}:
-		if idValue, ok := value["@id"].(string); ok {
-			obj := jsonldObjectFromID(idValue, ctx, state)
-			return sink(Quad{S: subject, P: pred, O: obj, G: graphName})
-		}
-		if literalValue, ok := value["@value"]; ok {
-			lit := Literal{Lexical: fmt.Sprintf("%v", literalValue)}
-			if lang, ok := value["@language"].(string); ok {
-				lit.Lang = lang
-			}
-			if dtype, ok := value["@type"].(string); ok {
-				lit.Datatype = IRI{Value: expandJSONLDTerm(dtype, ctx)}
-			}
-			return sink(Quad{S: subject, P: pred, O: lit, G: graphName})
-		}
-		if listValue, ok := value["@list"]; ok {
-			listObj, err := emitJSONLDList(listValue, ctx, graphName, state, sink)
-			if err != nil {
-				return err
-			}
-			return sink(Quad{S: subject, P: pred, O: listObj, G: graphName})
-		}
-		return fmt.Errorf("jsonld: unsupported object value")
+		return emitJSONLDObjectValue(value, subject, pred, ctx, graphName, state, sink)
 	case string:
 		return sink(Quad{S: subject, P: pred, O: Literal{Lexical: value}, G: graphName})
-	case float64:
-		return sink(Quad{S: subject, P: pred, O: Literal{Lexical: fmt.Sprintf("%v", value), Datatype: IRI{Value: "http://www.w3.org/2001/XMLSchema#decimal"}}, G: graphName})
-	case bool:
-		return sink(Quad{S: subject, P: pred, O: Literal{Lexical: fmt.Sprintf("%v", value), Datatype: IRI{Value: "http://www.w3.org/2001/XMLSchema#boolean"}}, G: graphName})
+	case float64, bool:
+		lit := emitJSONLDLiteralValue(value, ctx)
+		return sink(Quad{S: subject, P: pred, O: lit, G: graphName})
 	default:
-		return fmt.Errorf("jsonld: unsupported literal value")
+		return fmt.Errorf("jsonld: unsupported literal value (got %T)", value)
 	}
 	return nil
 }
@@ -745,7 +709,7 @@ func expandJSONLDTerm(value string, ctx jsonldContext) string {
 
 func jsonldSubject(raw interface{}, ctx jsonldContext, state *jsonldState) (Term, error) {
 	if raw == nil {
-		return nil, fmt.Errorf("jsonld: node missing @id")
+		return nil, fmt.Errorf("jsonld: node missing @id (got nil)")
 	}
 	if idValue, ok := raw.(string); ok {
 		if strings.HasPrefix(idValue, "_:") {
@@ -753,11 +717,11 @@ func jsonldSubject(raw interface{}, ctx jsonldContext, state *jsonldState) (Term
 		}
 		expanded := expandJSONLDTerm(idValue, ctx)
 		if expanded == "" {
-			return nil, fmt.Errorf("jsonld: node missing @id")
+			return nil, fmt.Errorf("jsonld: node missing @id (failed to expand %q)", idValue)
 		}
 		return IRI{Value: expanded}, nil
 	}
-	return nil, fmt.Errorf("jsonld: node missing @id")
+	return nil, fmt.Errorf("jsonld: node missing @id (got %T, expected string)", raw)
 }
 
 func jsonldObjectFromID(idValue string, ctx jsonldContext, state *jsonldState) Term {
@@ -767,13 +731,17 @@ func jsonldObjectFromID(idValue string, ctx jsonldContext, state *jsonldState) T
 	return IRI{Value: expandJSONLDTerm(idValue, ctx)}
 }
 
+// emitJSONLDList processes a @list value and emits RDF list structure (rdf:first/rdf:rest).
+// It creates blank nodes for list items and returns the head of the list.
+// Empty lists return rdf:nil.
+// The function builds a linked list structure using rdf:first and rdf:rest predicates.
 func emitJSONLDList(raw interface{}, ctx jsonldContext, graphName Term, state *jsonldState, sink jsonldQuadSink) (Term, error) {
 	if err := state.checkContext(); err != nil {
 		return nil, err
 	}
 	list, ok := raw.([]interface{})
 	if !ok {
-		return nil, fmt.Errorf("jsonld: invalid @list value")
+		return nil, fmt.Errorf("jsonld: invalid @list value (got %T, expected array)", raw)
 	}
 	if len(list) == 0 {
 		return IRI{Value: rdfNilIRI}, nil
@@ -806,6 +774,8 @@ func emitJSONLDList(raw interface{}, ctx jsonldContext, graphName Term, state *j
 	return head, nil
 }
 
+// jsonldValueTerm converts a JSON-LD value to an RDF term for use in lists.
+// It handles objects with @id or @value, and primitive types (string, number, boolean).
 func jsonldValueTerm(raw interface{}, ctx jsonldContext, graphName Term, state *jsonldState, sink jsonldQuadSink) (Term, error) {
 	if err := state.checkContext(); err != nil {
 		return nil, err
@@ -816,7 +786,7 @@ func jsonldValueTerm(raw interface{}, ctx jsonldContext, graphName Term, state *
 			return jsonldObjectFromID(idValue, ctx, state), nil
 		}
 		if literalValue, ok := value["@value"]; ok {
-			lit := Literal{Lexical: fmt.Sprintf("%v", literalValue)}
+			lit := emitJSONLDLiteralValue(literalValue, ctx)
 			if lang, ok := value["@language"].(string); ok {
 				lit.Lang = lang
 			}
@@ -825,13 +795,11 @@ func jsonldValueTerm(raw interface{}, ctx jsonldContext, graphName Term, state *
 			}
 			return lit, nil
 		}
-		return nil, fmt.Errorf("jsonld: unsupported list value")
+		return nil, fmt.Errorf("jsonld: unsupported list value (map without @id or @value)")
 	case string:
 		return Literal{Lexical: value}, nil
-	case float64:
-		return Literal{Lexical: fmt.Sprintf("%v", value), Datatype: IRI{Value: "http://www.w3.org/2001/XMLSchema#decimal"}}, nil
-	case bool:
-		return Literal{Lexical: fmt.Sprintf("%v", value), Datatype: IRI{Value: "http://www.w3.org/2001/XMLSchema#boolean"}}, nil
+	case float64, bool:
+		return emitJSONLDLiteralValue(value, ctx), nil
 	default:
 		return nil, fmt.Errorf("jsonld: unsupported list value")
 	}
@@ -844,7 +812,7 @@ const (
 )
 
 // Triple encoder for JSON-LD
-type jsonldTripleEncoder struct {
+type jsonldtripleEncoder struct {
 	writer  *bufio.Writer
 	raw     io.Writer
 	closed  bool
@@ -853,12 +821,12 @@ type jsonldTripleEncoder struct {
 	opts    JSONLDOptions
 }
 
-func newJSONLDTripleEncoder(w io.Writer) TripleEncoder {
-	return newJSONLDTripleEncoderWithOptions(w, JSONLDOptions{})
+func newJSONLDtripleEncoder(w io.Writer) tripleEncoder {
+	return newJSONLDtripleEncoderWithOptions(w, JSONLDOptions{})
 }
 
-func newJSONLDTripleEncoderWithOptions(w io.Writer, opts JSONLDOptions) TripleEncoder {
-	return &jsonldTripleEncoder{writer: bufio.NewWriter(w), raw: w, opts: opts}
+func newJSONLDtripleEncoderWithOptions(w io.Writer, opts JSONLDOptions) tripleEncoder {
+	return &jsonldtripleEncoder{writer: bufio.NewWriter(w), raw: w, opts: opts}
 }
 
 func shouldEagerFlushJSONLD(w io.Writer) bool {
@@ -866,7 +834,7 @@ func shouldEagerFlushJSONLD(w io.Writer) bool {
 	return strings.Contains(typeName, "errWriter") || strings.Contains(typeName, "failAfterWriter")
 }
 
-func (e *jsonldTripleEncoder) Write(t Triple) error {
+func (e *jsonldtripleEncoder) Write(t Triple) error {
 	if e.err != nil {
 		return e.err
 	}
@@ -965,14 +933,14 @@ func (e *jsonldTripleEncoder) Write(t Triple) error {
 	return nil
 }
 
-func (e *jsonldTripleEncoder) Flush() error {
+func (e *jsonldtripleEncoder) Flush() error {
 	if e.err != nil {
 		return e.err
 	}
 	return e.writer.Flush()
 }
 
-func (e *jsonldTripleEncoder) Close() error {
+func (e *jsonldtripleEncoder) Close() error {
 	if e.closed {
 		return e.err
 	}
@@ -1052,7 +1020,7 @@ func checkJSONLDContext(ctx context.Context) error {
 	}
 }
 
-func (d *jsonldTripleDecoder) setErr(err error) {
+func (d *jsonldtripleDecoder) setErr(err error) {
 	d.errMu.Lock()
 	defer d.errMu.Unlock()
 	if d.err == nil {
@@ -1060,7 +1028,7 @@ func (d *jsonldTripleDecoder) setErr(err error) {
 	}
 }
 
-func (d *jsonldTripleDecoder) getErr() error {
+func (d *jsonldtripleDecoder) getErr() error {
 	d.errMu.Lock()
 	defer d.errMu.Unlock()
 	if d.err == nil {
@@ -1071,7 +1039,7 @@ func (d *jsonldTripleDecoder) getErr() error {
 	return d.err
 }
 
-func (d *jsonldQuadDecoder) setErr(err error) {
+func (d *jsonldquadDecoder) setErr(err error) {
 	d.errMu.Lock()
 	defer d.errMu.Unlock()
 	if d.err == nil {
@@ -1079,7 +1047,7 @@ func (d *jsonldQuadDecoder) setErr(err error) {
 	}
 }
 
-func (d *jsonldQuadDecoder) getErr() error {
+func (d *jsonldquadDecoder) getErr() error {
 	d.errMu.Lock()
 	defer d.errMu.Unlock()
 	if d.err == nil {
@@ -1090,26 +1058,26 @@ func (d *jsonldQuadDecoder) getErr() error {
 	return d.err
 }
 
-type jsonldQuadEncoder struct {
-	inner *jsonldTripleEncoder
+type jsonldquadEncoder struct {
+	inner *jsonldtripleEncoder
 }
 
-func newJSONLDQuadEncoderWithOptions(w io.Writer, opts JSONLDOptions) QuadEncoder {
-	enc := newJSONLDTripleEncoderWithOptions(w, opts).(*jsonldTripleEncoder)
-	return &jsonldQuadEncoder{inner: enc}
+func newJSONLDquadEncoderWithOptions(w io.Writer, opts JSONLDOptions) quadEncoder {
+	enc := newJSONLDtripleEncoderWithOptions(w, opts).(*jsonldtripleEncoder)
+	return &jsonldquadEncoder{inner: enc}
 }
 
-func (e *jsonldQuadEncoder) Write(q Quad) error {
+func (e *jsonldquadEncoder) Write(q Quad) error {
 	if q.IsZero() {
 		return nil
 	}
 	return e.inner.Write(q.ToTriple())
 }
 
-func (e *jsonldQuadEncoder) Flush() error {
+func (e *jsonldquadEncoder) Flush() error {
 	return e.inner.Flush()
 }
 
-func (e *jsonldQuadEncoder) Close() error {
+func (e *jsonldquadEncoder) Close() error {
 	return e.inner.Close()
 }

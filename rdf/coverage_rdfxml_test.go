@@ -39,8 +39,8 @@ func TestRDFXMLSubjectBranches(t *testing.T) {
 }
 
 func TestRDFXMLConsumeElementEOF(t *testing.T) {
-	rdfDec := newRDFXMLTripleDecoder(strings.NewReader("<rdf:RDF"))
-	dec := rdfDec.(*rdfxmlTripleDecoder)
+	rdfDec := newRDFXMLtripleDecoder(strings.NewReader("<rdf:RDF"))
+	dec := rdfDec.(*rdfxmltripleDecoder)
 	if err := dec.consumeElement(); err == nil {
 		t.Fatal("expected consume error")
 	}
