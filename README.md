@@ -42,6 +42,13 @@ import (
 
 // Parse with auto-detection: FormatAuto tells the library to detect the format
 // The handler function is called for each statement found in the input
+//
+// Why context.Background()? The Parse function requires a context for:
+// - Cancellation support (you can cancel parsing mid-stream)
+// - Timeout support (you can set a deadline)
+// - Integration with Go's context ecosystem
+// Use context.Background() when you don't need cancellation/timeouts.
+// Use context.WithTimeout() or context.WithCancel() when you do.
 err := rdf.Parse(context.Background(), reader, rdf.FormatAuto, func(s rdf.Statement) error {
     // Each statement contains S (subject), P (predicate), O (object), and G (graph)
     // For triples, G will be nil. For quads (named graphs), G will be non-nil
@@ -134,6 +141,70 @@ for {
 | **Best For** | Most use cases | Complex scenarios |
 
 **Recommendation**: Start with `Parse` for simplicity. Use `Reader` when you need more control over the parsing process.
+
+### Understanding Context in Parse
+
+The `Parse` function requires a `context.Context` parameter. Here's why and when to use different contexts:
+
+**Why Context is Required:**
+- **Cancellation**: Allows you to cancel parsing mid-stream (useful for user cancellation, shutdown signals)
+- **Timeouts**: Enables setting deadlines (useful for preventing long-running operations)
+- **Integration**: Works with Go's standard context ecosystem (HTTP requests, gRPC, etc.)
+
+**When to use `context.Background()`:**
+- Simple parsing without cancellation/timeout needs
+- Standalone scripts or utilities
+- When you want parsing to run to completion
+
+**When to use `context.WithTimeout()`:**
+- Parsing with a time limit
+- Preventing parsing from running too long
+- Example: `ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)`
+
+**When to use `context.WithCancel()`:**
+- User-initiated cancellation
+- Graceful shutdown scenarios
+- Example: `ctx, cancel := context.WithCancel(context.Background())` then call `cancel()` to stop
+
+**Example with timeout:**
+```go
+ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+defer cancel()
+
+err := rdf.Parse(ctx, reader, rdf.FormatAuto, func(s rdf.Statement) error {
+    // Process statement
+    return nil
+})
+if err != nil {
+    if err == context.DeadlineExceeded {
+        // Parsing took too long
+    }
+}
+```
+
+**Example with cancellation:**
+```go
+ctx, cancel := context.WithCancel(context.Background())
+defer cancel()
+
+// In another goroutine or signal handler, call cancel() to stop parsing
+go func() {
+    time.Sleep(5 * time.Second)
+    cancel() // Stop parsing after 5 seconds
+}()
+
+err := rdf.Parse(ctx, reader, rdf.FormatAuto, func(s rdf.Statement) error {
+    // Process statement
+    return nil
+})
+if err != nil {
+    if err == context.Canceled {
+        // Parsing was cancelled
+    }
+}
+```
+
+**Note**: If you don't need cancellation or timeouts, `context.Background()` is the standard choice. It's a non-cancellable context that never expires.
 
 ### Decode (Pull Style)
 
