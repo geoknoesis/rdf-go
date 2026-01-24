@@ -4,12 +4,15 @@
 APIs and RDF-star support. It is designed for low allocations and for use
 in pipelines where RDF data should be processed incrementally.
 
-## Author
+## About
 
-**Stephane Fellah** - stephanef@geoknoesis.com  
-Geosemantic-AI expert with 30 years of experience
+**rdf-go** is developed by **[GeoKnoesis LLC](https://geoknoesis.com/)**, a company specializing in semantic web technologies and knowledge engineering.
 
-Published by **Geoknoesis LLC** - www.geoknoesis.com
+### Main Developer
+
+- **Stephane Fellah** - Principal Developer
+- **Contact**: [stephanef@geoknoesis.com](mailto:stephanef@geoknoesis.com)
+- Geosemantic-AI expert with 30 years of experience
 
 ## Features
 
@@ -20,6 +23,94 @@ Published by **Geoknoesis LLC** - www.geoknoesis.com
 - RDF-star via `TripleTerm` values.
 - Multiple formats: Turtle, TriG, N-Triples, N-Quads, RDF/XML, JSON-LD.
 - Automatic format detection with `FormatAuto`.
+
+## What Makes This Library Unique
+
+`rdf-go` stands out as a comprehensive, standards-compliant RDF library for Go with several distinguishing characteristics:
+
+### Standards Conformance
+
+**Full W3C Standards Support:**
+- **RDF 1.1** (W3C Recommendation, 2014): Complete conformance with RDF 1.1 Concepts, RDF 1.1 Turtle, RDF 1.1 N-Triples, RDF 1.1 TriG, and RDF 1.1 N-Quads specifications
+- **RDF 1.2** (W3C Recommendation, 2024): Support for RDF 1.2 features including quoted triples (RDF-star) in Turtle, TriG, N-Triples, and N-Quads formats
+- **JSON-LD 1.1** (W3C Recommendation, 2020): Full support for JSON-LD 1.1 Processing Algorithms, including remote context resolution, expansion, and RDF conversion
+- **Turtle 1.1 & 1.2**: Complete Turtle syntax support including collections, blank nodes, prefixes, base IRIs, and RDF-star quoted triples
+- **RDF/XML 1.0**: Full RDF/XML support with container membership expansion (rdf:Bag, rdf:Seq, rdf:Alt, rdf:List)
+
+**W3C Test Suite Compliance:**
+- Passes official W3C RDF test suites for RDF 1.1 and RDF 1.2
+- Validated against W3C JSON-LD test suite (both 1.0 and 1.1)
+- Comprehensive compliance testing via `TestW3CConformance()` with support for manifest-based test execution
+
+### Unique Architecture
+
+**Unified API Design:**
+- Single `Reader` and `Writer` interface for all 6 supported formats (Turtle, TriG, N-Triples, N-Quads, RDF/XML, JSON-LD)
+- No format-specific APIs to learn—same code works across all formats
+- Automatic format detection eliminates the need to specify format explicitly
+
+**Streaming-First Architecture:**
+- True streaming parsers with O(1) memory usage (bounded only by security limits)
+- Pull-style readers for explicit control over parsing flow
+- Push-style writers for efficient encoding
+- Designed for processing large datasets that don't fit in memory
+
+**RDF-star (Quoted Triples) Support:**
+- Native support for RDF-star quoted triples via `TripleTerm` type
+- Works seamlessly across Turtle, TriG, N-Triples, and N-Quads formats
+- Enables making statements about statements—a key feature for provenance, annotations, and reification
+
+### Performance & Efficiency
+
+**Optimized for Production:**
+- Low-allocation design using `strings.Builder` and buffer reuse
+- Streaming architecture minimizes memory footprint
+- Typically processes 10K-100K+ triples/second depending on format
+- Comprehensive benchmark suite for performance regression testing
+
+**Security & Limits:**
+- Built-in security limits for untrusted input (max depth, max line bytes, max statement bytes)
+- `OptSafeLimits()` for conservative defaults suitable for untrusted data
+- Structured error codes for programmatic error handling and recovery
+
+### Developer Experience
+
+**Simple, Intuitive API:**
+- Optional context parameter (defaults to `context.Background()` when `nil`)
+- Convenient `Parse()` function for common use cases
+- Clear separation between triples and quads via `IsTriple()` and `IsQuad()` methods
+- Comprehensive error handling with structured error codes
+
+**Production-Ready:**
+- Extensive test coverage (70%+)
+- Performance regression tests ensure consistent performance
+- Comprehensive error handling documentation
+- Well-documented with examples for all major use cases
+
+### Format Coverage
+
+**Complete Format Support:**
+- **Triple formats**: Turtle, N-Triples, RDF/XML, JSON-LD
+- **Quad formats**: TriG, N-Quads, JSON-LD (with named graphs)
+- **All formats support**: Parsing ✅, Encoding ✅, Blank Nodes ✅
+- **RDF-star support**: Turtle ✅, TriG ✅, N-Triples ✅, N-Quads ✅
+
+**Advanced Features:**
+- RDF/XML container membership expansion (rdf:li → rdf:_n)
+- JSON-LD remote context resolution via `DocumentLoader`
+- JSON-LD 1.1 features (processing modes, RDF direction, native types)
+- Deterministic output for Turtle, TriG, N-Triples, N-Quads, and RDF/XML
+
+### Why Choose rdf-go?
+
+1. **Standards Compliance**: Full conformance with latest W3C RDF and JSON-LD specifications
+2. **Performance**: Streaming architecture optimized for high-throughput scenarios
+3. **Simplicity**: Unified API across all formats reduces learning curve
+4. **Completeness**: Support for all major RDF formats in a single library
+5. **Modern Features**: RDF-star support for next-generation RDF applications
+6. **Production Quality**: Comprehensive testing, error handling, and documentation
+
+Whether you're building semantic web applications, data pipelines, knowledge graphs, or RDF processing tools, `rdf-go` provides the standards compliance, performance, and developer experience you need.
 
 ## Install
 
@@ -866,3 +957,20 @@ Benchmark results vary by system and input size. Key benchmarks include:
 
 For detailed performance analysis, run benchmarks on your target system and input data.
 
+## 💝 Support & Sponsorship
+
+**rdf-go is open-source and free to use, but maintaining and evolving it requires ongoing effort.**
+
+If rdf-go is valuable to you or your organization, your financial support helps ensure:
+
+- ✅ **Continued maintenance** - Bug fixes, security updates, and compatibility with new Go versions and RDF standards
+- ✅ **Feature development** - New capabilities and improvements based on community needs
+- ✅ **Custom adaptations** - Priority consideration for features that align with your specific requirements
+- ✅ **Long-term sustainability** - Keeping the project active and well-maintained for the community
+
+**Ways to support:**
+
+- 💰 **[GitHub Sponsors](https://github.com/sponsors/geoknoesis)** - Monthly or one-time sponsorship
+- ☕ **[Ko-fi](https://ko-fi.com/geoknoesis)** - One-time donations
+- 🏢 **Enterprise Support** - For organizations needing priority support, custom features, or commercial licensing: [stephanef@geoknoesis.com](mailto:stephanef@geoknoesis.com)
+- 🌟 **Star the repository** - Help others discover rdf-go on [GitHub](https://github.com/geoknoesis/rdf-go)
