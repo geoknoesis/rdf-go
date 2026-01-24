@@ -971,6 +971,6 @@ If rdf-go is valuable to you or your organization, your financial support helps 
 **Ways to support:**
 
 - 💰 **[GitHub Sponsors](https://github.com/sponsors/geoknoesis)** - Monthly or one-time sponsorship
-- ☕ **[Ko-fi](https://ko-fi.com/geoknoesis)** - One-time donations
+- ☕ **[Ko-fi](https://ko-fi.com/fellahst)** - One-time donations
 - 🏢 **Enterprise Support** - For organizations needing priority support, custom features, or commercial licensing: [stephanef@geoknoesis.com](mailto:stephanef@geoknoesis.com)
 - 🌟 **Star the repository** - Help others discover rdf-go on [GitHub](https://github.com/geoknoesis/rdf-go)
