@@ -73,8 +73,13 @@ func NewReader(r io.Reader, format Format, opts ...Option) (Reader, error) {
 
 // Parse parses RDF from the reader and streams statements to the handler.
 // If format is FormatAuto (empty string), the format is automatically detected.
+// If ctx is nil, context.Background() is used as the default.
 func Parse(ctx context.Context, r io.Reader, format Format, handler Handler, opts ...Option) error {
 	options := defaultOptions()
+	// Default to context.Background() if ctx is nil
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	options.Context = ctx
 	for _, opt := range opts {
 		opt(&options)
@@ -87,7 +92,7 @@ func Parse(ctx context.Context, r io.Reader, format Format, handler Handler, opt
 	defer reader.Close()
 
 	for {
-		if ctx != nil && ctx.Err() != nil {
+		if ctx.Err() != nil {
 			return ctx.Err()
 		}
 

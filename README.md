@@ -43,13 +43,9 @@ import (
 // Parse with auto-detection: FormatAuto tells the library to detect the format
 // The handler function is called for each statement found in the input
 //
-// Why context.Background()? The Parse function requires a context for:
-// - Cancellation support (you can cancel parsing mid-stream)
-// - Timeout support (you can set a deadline)
-// - Integration with Go's context ecosystem
-// Use context.Background() when you don't need cancellation/timeouts.
-// Use context.WithTimeout() or context.WithCancel() when you do.
-err := rdf.Parse(context.Background(), reader, rdf.FormatAuto, func(s rdf.Statement) error {
+// Note: You can pass nil for context to use context.Background() as default.
+// Pass an explicit context when you need cancellation or timeouts.
+err := rdf.Parse(nil, reader, rdf.FormatAuto, func(s rdf.Statement) error {
     // Each statement contains S (subject), P (predicate), O (object), and G (graph)
     // For triples, G will be nil. For quads (named graphs), G will be non-nil
     fmt.Printf("Subject: %s, Predicate: %s, Object: %s\n", 
@@ -93,7 +89,8 @@ The library provides two ways to read RDF data: `Parse` (push model) and `NewRea
 
 **Example:**
 ```go
-err := rdf.Parse(ctx, reader, rdf.FormatAuto, func(s rdf.Statement) error {
+// Simplest: pass nil for context (uses context.Background() automatically)
+err := rdf.Parse(nil, reader, rdf.FormatAuto, func(s rdf.Statement) error {
     // Process each statement as it arrives
     return nil
 })
@@ -151,10 +148,11 @@ The `Parse` function requires a `context.Context` parameter. Here's why and when
 - **Timeouts**: Enables setting deadlines (useful for preventing long-running operations)
 - **Integration**: Works with Go's standard context ecosystem (HTTP requests, gRPC, etc.)
 
-**When to use `context.Background()`:**
+**When to use `nil` (simplest):**
 - Simple parsing without cancellation/timeout needs
 - Standalone scripts or utilities
 - When you want parsing to run to completion
+- **Simplest option**: Just pass `nil` instead of `context.Background()`
 
 **When to use `context.WithTimeout()`:**
 - Parsing with a time limit
@@ -204,7 +202,15 @@ if err != nil {
 }
 ```
 
-**Note**: If you don't need cancellation or timeouts, `context.Background()` is the standard choice. It's a non-cancellable context that never expires.
+**Note**: If you don't need cancellation or timeouts, you can simply pass `nil` for the context parameter. The library will automatically use `context.Background()` for you. This is the simplest option for most use cases.
+
+**Example with nil (simplest):**
+```go
+err := rdf.Parse(nil, reader, rdf.FormatAuto, func(s rdf.Statement) error {
+    // Process statement
+    return nil
+})
+```
 
 ### Decode (Pull Style)
 
@@ -264,7 +270,7 @@ import (
 
 // Collect all statements into a slice
 var stmts []rdf.Statement
-err := rdf.Parse(context.Background(), reader, rdf.FormatAuto, func(s rdf.Statement) error {
+err := rdf.Parse(nil, reader, rdf.FormatAuto, func(s rdf.Statement) error {
     stmts = append(stmts, s)
     return nil
 })

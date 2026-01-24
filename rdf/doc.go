@@ -58,10 +58,16 @@
 //
 // Example (parsing with handler):
 //
-//	err := rdf.Parse(context.Background(), reader, rdf.FormatTurtle, func(s rdf.Statement) error {
+//	// Simplest: pass nil for context (uses context.Background() automatically)
+//	err := rdf.Parse(nil, reader, rdf.FormatTurtle, func(s rdf.Statement) error {
 //	    // process statement
 //	    return nil
 //	})
+//
+//	// For cancellation or timeouts, pass an explicit context:
+//	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+//	defer cancel()
+//	err := rdf.Parse(ctx, reader, rdf.FormatTurtle, handler)
 //
 // For unsupported formats, NewReader and NewWriter return ErrUnsupportedFormat.
 //
