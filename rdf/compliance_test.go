@@ -192,12 +192,29 @@ func runManifestTests(t *testing.T, testDir string, testCases []w3cTestCase, cfg
 				t.Fatalf("Failed to read test file: %v", err)
 			}
 
-			parseErr := Parse(context.Background(), strings.NewReader(string(data)),
-				cfg.format, func(Statement) error { return nil })
+			// Collect statements for validation (only for positive tests)
+			var statements []Statement
+			var parseErr error
+			if tc.testType == "positive" || tc.testType == "" {
+				parseErr = Parse(context.Background(), strings.NewReader(string(data)),
+					cfg.format, func(s Statement) error {
+						statements = append(statements, s)
+						return nil
+					})
+			} else {
+				// For negative tests, use no-op handler
+				parseErr = Parse(context.Background(), strings.NewReader(string(data)),
+					cfg.format, func(Statement) error { return nil })
+			}
 
 			if tc.testType == "positive" {
 				if parseErr != nil {
 					t.Errorf("Positive test failed: %v", parseErr)
+					return
+				}
+				// Validate numeric literal datatypes for Turtle format
+				if cfg.name == "turtle" {
+					validateTurtleNumericLiteralDatatypes(t, statements, string(data))
 				}
 			} else if tc.testType == "negative" {
 				if parseErr == nil {
@@ -211,9 +228,69 @@ func runManifestTests(t *testing.T, testDir string, testCases []w3cTestCase, cfg
 				// Unknown type, try to parse (assume positive)
 				if parseErr != nil {
 					t.Errorf("Parse error: %v", parseErr)
+					return
+				}
+				// Validate numeric literal datatypes for Turtle format
+				if cfg.name == "turtle" {
+					validateTurtleNumericLiteralDatatypes(t, statements, string(data))
 				}
 			}
 		})
+	}
+}
+
+// validateTurtleNumericLiteralDatatypes validates that numeric literals in Turtle
+// have the correct datatypes according to RDF 1.1 Turtle specification:
+// - Bare integers (e.g., 30) → xsd:integer
+// - Decimals (e.g., 30.0) → xsd:decimal
+// - Doubles with exponent (e.g., 30e10) → xsd:double
+//
+// This validation is an enhancement beyond what the W3C test suites check.
+// The W3C tests primarily verify syntax correctness and graph structure,
+// but don't strictly enforce exact datatype matching for numeric literals.
+// This function ensures compliance with the RDF 1.1 Turtle specification.
+func validateTurtleNumericLiteralDatatypes(t *testing.T, statements []Statement, input string) {
+	const (
+		xsdInteger = "http://www.w3.org/2001/XMLSchema#integer"
+		xsdDecimal = "http://www.w3.org/2001/XMLSchema#decimal"
+		xsdDouble  = "http://www.w3.org/2001/XMLSchema#double"
+	)
+
+	// Helper to determine expected datatype from lexical form
+	expectedDatatype := func(lexical string) string {
+		lexical = strings.TrimSpace(lexical)
+		// Check for exponent (e or E) - indicates double
+		if strings.Contains(lexical, "e") || strings.Contains(lexical, "E") {
+			return xsdDouble
+		}
+		// Check for decimal point - indicates decimal
+		if strings.Contains(lexical, ".") {
+			return xsdDecimal
+		}
+		// Otherwise, it's an integer
+		return xsdInteger
+	}
+
+	// Check all literal statements
+	for i, stmt := range statements {
+		lit, ok := stmt.O.(Literal)
+		if !ok {
+			continue
+		}
+
+		// Only validate numeric datatypes
+		if lit.Datatype.Value != xsdInteger &&
+			lit.Datatype.Value != xsdDecimal &&
+			lit.Datatype.Value != xsdDouble {
+			continue
+		}
+
+		// Determine expected datatype from lexical form
+		expected := expectedDatatype(lit.Lexical)
+		if lit.Datatype.Value != expected {
+			t.Errorf("Statement %d: numeric literal %q has datatype %q, expected %q",
+				i+1, lit.Lexical, lit.Datatype.Value, expected)
+		}
 	}
 }
 
