@@ -86,6 +86,14 @@ func TestTurtleCursor_TryParseNumericLiteral_Integer(t *testing.T) {
 	if stmt.O.Kind() != TermLiteral {
 		t.Error("Expected Literal for integer")
 	}
+	lit, ok := stmt.O.(Literal)
+	if !ok {
+		t.Fatal("Expected Literal type")
+	}
+	expectedDatatype := "http://www.w3.org/2001/XMLSchema#integer"
+	if lit.Datatype.Value != expectedDatatype {
+		t.Errorf("Integer literal datatype = %q, want %q", lit.Datatype.Value, expectedDatatype)
+	}
 }
 
 func TestTurtleCursor_TryParseNumericLiteral_Negative(t *testing.T) {
@@ -137,6 +145,14 @@ func TestTurtleCursor_TryParseNumericLiteral_LeadingDot(t *testing.T) {
 	}
 	if stmt.O.Kind() != TermLiteral {
 		t.Error("Expected Literal for decimal")
+	}
+	lit, ok := stmt.O.(Literal)
+	if !ok {
+		t.Fatal("Expected Literal type")
+	}
+	expectedDatatype := "http://www.w3.org/2001/XMLSchema#decimal"
+	if lit.Datatype.Value != expectedDatatype {
+		t.Errorf("Decimal literal datatype = %q, want %q", lit.Datatype.Value, expectedDatatype)
 	}
 }
 
@@ -202,6 +218,118 @@ func TestTurtleCursor_TryParseNumericLiteral_Invalid(t *testing.T) {
 	_, err = dec.Next()
 	// May or may not error - test doesn't crash
 	_ = err
+}
+
+// TestTurtleNumericLiteralDatatypes verifies that numeric literals are parsed
+// with the correct datatypes according to RDF 1.1 Turtle specification:
+// - Bare integers (no decimal point, no exponent) → xsd:integer
+// - Numbers with decimal point → xsd:decimal
+// - Numbers with exponent → xsd:double
+func TestTurtleNumericLiteralDatatypes(t *testing.T) {
+	tests := []struct {
+		name           string
+		input          string
+		expectedLexical string
+		expectedDatatype string
+	}{
+		// Integers (bare integers without decimal point or exponent)
+		{"positive integer", `<s> <p> 30 .`, "30", "http://www.w3.org/2001/XMLSchema#integer"},
+		{"negative integer", `<s> <p> -30 .`, "-30", "http://www.w3.org/2001/XMLSchema#integer"},
+		{"positive integer with plus", `<s> <p> +30 .`, "+30", "http://www.w3.org/2001/XMLSchema#integer"},
+		{"large integer", `<s> <p> 1234567890 .`, "1234567890", "http://www.w3.org/2001/XMLSchema#integer"},
+		{"zero", `<s> <p> 0 .`, "0", "http://www.w3.org/2001/XMLSchema#integer"},
+		
+		// Decimals (numbers with decimal point, no exponent)
+		{"decimal with trailing zero", `<s> <p> 30.0 .`, "30.0", "http://www.w3.org/2001/XMLSchema#decimal"},
+		{"decimal fraction", `<s> <p> 30.5 .`, "30.5", "http://www.w3.org/2001/XMLSchema#decimal"},
+		{"negative decimal", `<s> <p> -30.5 .`, "-30.5", "http://www.w3.org/2001/XMLSchema#decimal"},
+		{"decimal starting with dot", `<s> <p> 0.123 .`, "0.123", "http://www.w3.org/2001/XMLSchema#decimal"},
+		{"decimal with leading zero", `<s> <p> 0.5 .`, "0.5", "http://www.w3.org/2001/XMLSchema#decimal"},
+		
+		// Doubles (numbers with exponent)
+		{"double with lowercase e", `<s> <p> 30e10 .`, "30e10", "http://www.w3.org/2001/XMLSchema#double"},
+		{"double with uppercase E", `<s> <p> 30E10 .`, "30E10", "http://www.w3.org/2001/XMLSchema#double"},
+		{"double with positive exponent", `<s> <p> 30e+10 .`, "30e+10", "http://www.w3.org/2001/XMLSchema#double"},
+		{"double with negative exponent", `<s> <p> 30e-10 .`, "30e-10", "http://www.w3.org/2001/XMLSchema#double"},
+		{"double decimal with exponent", `<s> <p> 30.5e10 .`, "30.5e10", "http://www.w3.org/2001/XMLSchema#double"},
+		{"double with decimal and negative exponent", `<s> <p> 3.0E-1 .`, "3.0E-1", "http://www.w3.org/2001/XMLSchema#double"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dec, err := NewReader(strings.NewReader(tt.input), FormatTurtle)
+			if err != nil {
+				t.Fatalf("NewReader failed: %v", err)
+			}
+			defer dec.Close()
+
+			stmt, err := dec.Next()
+			if err != nil {
+				t.Fatalf("Next failed: %v", err)
+			}
+
+			lit, ok := stmt.O.(Literal)
+			if !ok {
+				t.Fatalf("Expected Literal, got %T", stmt.O)
+			}
+
+			if lit.Lexical != tt.expectedLexical {
+				t.Errorf("Lexical value = %q, want %q", lit.Lexical, tt.expectedLexical)
+			}
+
+			if lit.Datatype.Value != tt.expectedDatatype {
+				t.Errorf("Datatype = %q, want %q", lit.Datatype.Value, tt.expectedDatatype)
+			}
+		})
+	}
+}
+
+// TestTurtleNumericLiteral_AliceAge tests the specific example from the user:
+// ex:Alice ex:age 30 . should parse 30 as xsd:integer
+func TestTurtleNumericLiteral_AliceAge(t *testing.T) {
+	ttl := `@prefix ex: <http://example.org/> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+ex:Alice rdf:type ex:Person .
+ex:Alice rdfs:label "Alice" .
+ex:Alice ex:age 30 .`
+
+	dec, err := NewReader(strings.NewReader(ttl), FormatTurtle)
+	if err != nil {
+		t.Fatalf("NewReader failed: %v", err)
+	}
+	defer dec.Close()
+
+	// Skip first two statements
+	_, _ = dec.Next() // ex:Alice rdf:type ex:Person
+	_, _ = dec.Next() // ex:Alice rdfs:label "Alice"
+
+	// Get the third statement with the age
+	stmt, err := dec.Next()
+	if err != nil {
+		t.Fatalf("Next failed: %v", err)
+	}
+
+	// Verify it's the age statement
+	if !strings.Contains(stmt.P.String(), "age") {
+		t.Fatalf("Expected age predicate, got %q", stmt.P.String())
+	}
+
+	// Verify the object is a literal with xsd:integer datatype
+	lit, ok := stmt.O.(Literal)
+	if !ok {
+		t.Fatalf("Expected Literal for age value, got %T", stmt.O)
+	}
+
+	if lit.Lexical != "30" {
+		t.Errorf("Lexical value = %q, want '30'", lit.Lexical)
+	}
+
+	expectedDatatype := "http://www.w3.org/2001/XMLSchema#integer"
+	if lit.Datatype.Value != expectedDatatype {
+		t.Errorf("Datatype = %q, want %q (xsd:integer per Turtle spec)", lit.Datatype.Value, expectedDatatype)
+	}
 }
 
 func TestTurtleCursor_TryParseBooleanLiteral_True(t *testing.T) {

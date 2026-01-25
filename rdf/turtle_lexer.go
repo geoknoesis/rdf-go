@@ -407,7 +407,16 @@ func (s *turtleScanner) scanWord() (turtleToken, error) {
 		return turtleToken{Kind: TokPNAMELN, Lexeme: lexeme}, nil
 	}
 	if isNumericLiteral(lexeme) {
-		return turtleToken{Kind: TokDecimal, Lexeme: lexeme}, nil
+		// Distinguish between integer and decimal per Turtle spec
+		// Bare integers (no decimal point, no exponent) → TokInteger
+		// Numbers with decimal point or exponent → TokDecimal or TokDouble
+		if strings.Contains(lexeme, "e") || strings.Contains(lexeme, "E") {
+			return turtleToken{Kind: TokDouble, Lexeme: lexeme}, nil
+		} else if strings.Contains(lexeme, ".") {
+			return turtleToken{Kind: TokDecimal, Lexeme: lexeme}, nil
+		} else {
+			return turtleToken{Kind: TokInteger, Lexeme: lexeme}, nil
+		}
 	}
 	return turtleToken{Kind: TokError, Lexeme: lexeme, Err: ErrUnsupportedFormat}, nil
 }
